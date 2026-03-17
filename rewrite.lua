@@ -456,6 +456,10 @@ local function teleportToLocation(targetTable)
 end
 
 local function randomTeleport(root, island)
+    if not island then
+        warn("[RandomTeleport] Island is nil, skipping.")
+        return
+    end
     local teleports = IslandTeleports[island.Name]
     if not teleports or #teleports == 0 then
         warn("[RandomTeleport] No teleport entries for: " .. island.Name)
@@ -527,15 +531,49 @@ end)
 --  AUTO-FARM
 -- ============================================================
 task.spawn(function()
-    local idleTime    = 0
-    local lockedHorse = nil
-    local followConn  = nil
+    local idleTime          = 0
+    local lockedHorse       = nil
+    local followConn        = nil
+    local isTravelling      = false
+    local noHorseTime       = 0   -- how long since any horse was found on this island
+    local STILL_TRAVEL_TIME = 40  -- seconds with no horses before switching island
 
     local function disconnectFollow()
         if followConn then
             followConn:Disconnect()
             followConn = nil
         end
+    end
+
+    local function safeTravelTo(islandName)
+        if isTravelling then return end
+        isTravelling = true
+        idleTime     = 0
+        noHorseTime  = 0
+        disconnectFollow()
+        lockedHorse  = nil
+
+        print("[AutoTravel] Travelling to: " .. islandName)
+        travelToIsland(islandName)
+
+        local deadline = tick() + 30
+        repeat
+            task.wait(1)
+            local current = getCurrentIsland()
+            if current and current.Name == islandName then break end
+        until tick() > deadline
+
+        task.wait(2)
+        isTravelling = false
+    end
+
+    local function safeRandomTeleport(root)
+        local island = getCurrentIsland()
+        if not island then
+            warn("[RandomTeleport] Island is nil, skipping.")
+            return
+        end
+        randomTeleport(root, island)
     end
 
     while true do
@@ -545,8 +583,11 @@ task.spawn(function()
             disconnectFollow()
             lockedHorse = nil
             idleTime    = 0
+            noHorseTime = 0
             continue
         end
+
+        if isTravelling then continue end
 
         local character = player.Character
         local root = character and character:FindFirstChild("HumanoidRootPart")
@@ -555,29 +596,30 @@ task.spawn(function()
         local island = getCurrentIsland()
         if not island then continue end
 
-        -- Auto travel to next selected farm island if current isn't in list
+        -- ── If current island isn't in the farm list, travel away ──
         if autotravel_enabled and not autofarm_islands[island.Name] then
             local next = getNextFarmIsland(island.Name)
             if next then
-                print("[AutoTravel] Travelling to: " .. next)
-                travelToIsland(next)
+                safeTravelTo(next)
             end
             continue
         end
 
-        -- Clear dead horse reference
+        -- ── Clear dead horse reference ──
         if lockedHorse and not lockedHorse.Parent then
             disconnectFollow()
             lockedHorse = nil
         end
 
-        -- Scan for new horse only if we don't have one
+        -- ── Scan for nearest horse if we don't have one ──
         if not lockedHorse then
             lockedHorse = getNearestHorse(root, island)
         end
 
         if lockedHorse then
-            idleTime = 0
+            -- Actively farming, reset timers
+            idleTime    = 0
+            noHorseTime = 0
 
             if not followConn then
                 followConn = RunService.Heartbeat:Connect(function()
@@ -591,20 +633,29 @@ task.spawn(function()
             end
 
         else
+            -- No horse found
             disconnectFollow()
-            idleTime += 1
+            idleTime    += 1
+            noHorseTime += 0.4  -- accumulates every tick (0.4s each)
 
-            if idleTime >= (tonumber(idle_limit) or IDLE_LIMIT) then
-                if autotravel_enabled then
-                    local next = getNextFarmIsland(island.Name)
-                    if next and next ~= island.Name then
-                        print("[AutoTravel] No horses found, moving to: " .. next)
-                        travelToIsland(next)
-                        idleTime = 0
-                        continue
-                    end
+            -- ── No horses for long enough → switch island ──
+            if autotravel_enabled and noHorseTime >= STILL_TRAVEL_TIME then
+                local next = getNextFarmIsland(island.Name)
+                if next and next ~= island.Name then
+                    print("[AutoTravel] No horses for " .. STILL_TRAVEL_TIME .. "s, moving to: " .. next)
+                    safeTravelTo(next)
+                else
+                    -- Only one island selected, random teleport within it
+                    safeRandomTeleport(root)
+                    noHorseTime = 0
+                    idleTime    = 0
                 end
-                randomTeleport(root, island)
+                continue
+            end
+
+            -- ── Idle limit hit, random teleport within current island ──
+            if idleTime >= (tonumber(idle_limit) or IDLE_LIMIT) then
+                safeRandomTeleport(root)
                 idleTime = 0
             end
         end
@@ -623,12 +674,12 @@ local ESP_CONFIG = {
     ShowNames = false,
     ShowChams = false,
     ShowHealth = false,
-    BoxColor = Color3.fromRGB(255, 215, 0),
-    NameColor = Color3.fromRGB(255, 255, 255), ChamColor = Color3.fromRGB(255, 215, 0),
+    BoxColor = Color3.fromRGB(77, 78, 117),
+    NameColor = Color3.fromRGB(81, 82, 124), ChamColor = Color3.fromRGB(136, 137, 173),
     ColorTable = { 
-    Empty = Color3.fromRGB(255, 0, 0),
-    Half = Color3.fromRGB(255, 255, 0),
-    Full = Color3.fromRGB(0, 255, 0) 
+    Empty = Color3.fromRGB(86, 87, 120),
+    Half = Color3.fromRGB(73, 74, 117),
+    Full = Color3.fromRGB(66, 67, 117) 
     },
     BoxTransparency = 1, ChamTransparency = 0.5, TextSize = 14, MaxDistance = 2500,
     AnimateChams = false,
@@ -1508,9 +1559,9 @@ local Players      = game:GetService("Players")
 local player = Players.LocalPlayer
 
 getgenv().Highlight_Enabled      = false
-getgenv().Highlight_FillColor    = Color3.fromRGB(255, 0, 0)
-getgenv().Highlight_OutlineColor = Color3.fromRGB(255, 0, 0)
-getgenv().Highlight_Mode         = "Pulse"
+getgenv().Highlight_FillColor    = Color3.fromRGB(136, 137, 173)
+getgenv().Highlight_OutlineColor = Color3.fromRGB(81, 82, 124)
+getgenv().Highlight_Mode         = "None"
 getgenv().Highlight_Speed        = 2
 
 local currentHighlight = nil
@@ -1651,13 +1702,13 @@ CharacterVisuals:AddToggle('EnableLocalHighlight', {
         UpdateHighlightEnabled(Value)
     end
 }):AddColorPicker('LocalHighlightFillColor', {
-    Default  = Color3.fromRGB(255, 0, 0),
+    Default  = Color3.fromRGB(136, 137, 173),
     Title    = 'Fill Color',
     Callback = function(Value)
         UpdateHighlightFillColor(Value)
     end
 }):AddColorPicker('LocalHighlightOutlineColor', {
-    Default  = Color3.fromRGB(255, 0, 0),
+    Default  = Color3.fromRGB(81, 82, 124),
     Title    = 'Outline Color',
     Callback = function(Value)
         UpdateHighlightOutlineColor(Value)
