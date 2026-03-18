@@ -956,29 +956,6 @@ for _, v in ipairs(LOCK_INDICATOR_OPTIONS) do
     LOCK_INDICATORS[v] = true
 end
 
-LeftGroupBox:AddToggle('Autosell_Enable', {
-    Text = 'Auto Sell',
-    Default = false,
-    Tooltip = 'Enables Auto Sell',
-
-    Callback = function(Value)
-        toggleAutosell(Value)  -- also fixed: was setting autosell_enabled directly, bypassing toggleAutosell
-    end
-})
-
-local horseselloptions = LeftGroupBox:AddDropdown('HorsestoLock', {
-    Text     = 'Lock Horses',
-    Values   = LOCK_INDICATOR_OPTIONS,
-    Default  = "",
-    Multi    = true,
-    Tooltip  = 'Select which horse types to lock instead of sell',
-    Callback = function(Value)
-        for _, name in ipairs(LOCK_INDICATOR_OPTIONS) do
-            LOCK_INDICATORS[name] = Value[name] == true
-        end
-    end
-})
-
 local function shouldLockHorse(itemData)
     if not itemData then return false end
 
@@ -1064,6 +1041,29 @@ local function toggleAutosell(state)
         end
     end
 end
+
+LeftGroupBox:AddToggle('Autosell_Enable', {
+    Text = 'Auto Sell',
+    Default = false,
+    Tooltip = 'Enables Auto Sell',
+
+    Callback = function(Value)
+        toggleAutosell(Value)  -- also fixed: was setting autosell_enabled directly, bypassing toggleAutosell
+    end
+})
+
+local horseselloptions = LeftGroupBox:AddDropdown('HorsestoLock', {
+    Text     = 'Lock Horses',
+    Values   = LOCK_INDICATOR_OPTIONS,
+    Default  = "",
+    Multi    = true,
+    Tooltip  = 'Select which horse types to lock instead of sell',
+    Callback = function(Value)
+        for _, name in ipairs(LOCK_INDICATOR_OPTIONS) do
+            LOCK_INDICATORS[name] = Value[name] == true
+        end
+    end
+})
 
 
 -- Autoclick toggle
