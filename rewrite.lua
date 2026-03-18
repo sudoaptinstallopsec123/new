@@ -935,38 +935,90 @@ local HorseVariants = require(ReplicatedStorage.References.HorseVariants)
 local SpecialItemIndicators = require(ReplicatedStorage.References.SpecialItemIndicators)
 
 -- ─────────────────────────────────────────────
--- Helper: Check if horse should be locked
+-- Lock options for dropdown
 -- ─────────────────────────────────────────────
+
+local LOCK_INDICATOR_OPTIONS = {
+    "mismatchHairColour",
+    "naturallyDyedHairColour",
+    "islandUniqueCoat",
+    "islandUniqueHorn",
+    "islandUniqueHairColour",
+    "specialIslandUniqueCoat",
+    "specialCoat",
+    "specialHair",
+    "rareCoat",
+}
+
+-- All enabled by default
+local LOCK_INDICATORS = {}
+for _, v in ipairs(LOCK_INDICATOR_OPTIONS) do
+    LOCK_INDICATORS[v] = true
+end
+
+LeftGroupBox:AddToggle('Autosell_Enable', {
+    Text = 'Auto Sell',
+    Default = false,
+    Tooltip = 'Enables Auto Sell',
+
+    Callback = function(Value)
+        toggleAutosell(Value)  -- also fixed: was setting autosell_enabled directly, bypassing toggleAutosell
+    end
+})
+
+local horseselloptions = LeftGroupBox:AddDropdown('HorsestoLock', {
+    Text     = 'Lock Horses',
+    Values   = LOCK_INDICATOR_OPTIONS,
+    Default  = "",
+    Multi    = true,
+    Tooltip  = 'Select which horse types to lock instead of sell',
+    Callback = function(Value)
+        for _, name in ipairs(LOCK_INDICATOR_OPTIONS) do
+            LOCK_INDICATORS[name] = Value[name] == true
+        end
+    end
+})
 
 local function shouldLockHorse(itemData)
     if not itemData then return false end
 
-    -- Check hair colour variant
+    -- Check coat via HorseVariants.colour
     if itemData.variants and itemData.variants.colour then
-        local variant = HorseVariants[itemData.variants.colour]
-        if variant and variant.specialItemIndicator then
-            local indicator = SpecialItemIndicators[variant.specialItemIndicator]
-            if indicator and indicator.isExtraValuable then
+        local coatEntry = HorseVariants.colour and HorseVariants.colour[itemData.variants.colour]
+        if coatEntry then
+            local indicator = coatEntry.specialItemIndicator
+
+            if indicator and LOCK_INDICATORS[indicator] then
                 return true
+            end
+
+            if coatEntry.rarityFloat == 1 and not indicator and not coatEntry.unbreedable then
+                if LOCK_INDICATORS["rareCoat"] then
+                    return true
+                end
             end
         end
     end
 
-    -- Check coat variant
-    if itemData.variants and itemData.variants.coat then
-        local variant = HorseVariants[itemData.variants.coat]
-        if variant and variant.specialItemIndicator then
-            local indicator = SpecialItemIndicators[variant.specialItemIndicator]
-            if indicator and indicator.isExtraValuable then
-                return true
+    -- Check mane/tail colour via HorseVariants.maneAndTailColour
+    if itemData.variants then
+        for _, key in {"maneColour", "tailColour"} do
+            local val = itemData.variants[key]
+            if val then
+                local hairEntry = HorseVariants.maneAndTailColour and HorseVariants.maneAndTailColour[val]
+                if hairEntry then
+                    local indicator = hairEntry.specialItemIndicator
+                    if indicator and LOCK_INDICATORS[indicator] then
+                        return true
+                    end
+                end
             end
         end
     end
 
-    -- Check the item's own specialItemIndicator directly
+    -- Check item's own specialItemIndicator directly
     if itemData.specialItemIndicator then
-        local indicator = SpecialItemIndicators[itemData.specialItemIndicator]
-        if indicator and indicator.isExtraValuable then
+        if LOCK_INDICATORS[itemData.specialItemIndicator] then
             return true
         end
     end
@@ -996,6 +1048,8 @@ local function toggleAutosell(state)
     if autosell_enabled then
         if not bindConnection then
             bindConnection = InventoryHandler.Bind("Added", function(a, itemData)
+                if not autosell_enabled then return end
+
                 if shouldLockHorse(itemData) then
                     Network:FireServer("Inventory", "Lock", a)
                 else
@@ -1010,16 +1064,6 @@ local function toggleAutosell(state)
         end
     end
 end
-
-LeftGroupBox:AddToggle('Autosell_Enable', {
-    Text = 'Auto Sell',
-    Default = false,
-    Tooltip = 'Enables Auto Sell',
-
-    Callback = function(Value)
-        toggleAutosell(Value)  -- also fixed: was setting autosell_enabled directly, bypassing toggleAutosell
-    end
-})
 
 
 -- Autoclick toggle
@@ -1158,44 +1202,52 @@ RightGroupBox:AddToggle('Autotrain_Enable', {
 
 local Ores = Tabs.Main:AddLeftGroupbox('Ores')
 
-local AUTOFARM = false
-local OREHIGHLIGHT = false
-local RANDOM_TP_ENABLED = false -- Toggle for the idle teleport feature
-local CLICK_COOLDOWN = 0.15 
-local IDLE_THRESHOLD = 5       -- Seconds to wait before TPing
+local AUTOFARM          = false
+local OREHIGHLIGHT      = false
+local RANDOM_TP_ENABLED = false
+local CLICK_COOLDOWN    = 0.05
+local IDLE_THRESHOLD    = 5
+local isMining          = false
 
 local TARGET_ITEMS = {
-    ["Rock"] = false,
-    ["Copper Rock"] = false,
-    ["Bronze Rock"] = false,
-    ["Iron Rock"] = false,
-    ["Silver Rock"] = false,
-    ["Gold Rock"] = false,
-    ["Diamond Rock"] = false,
-    ["Sapphire Rock"] = false,
-    ["Topaz Rock"] = false,
-    ["Amethyst Rock"] = false,
-    ["Amethyst Rock"] = false,
-    ["Emerald Rock"] = false,
-    ["Obsidian Rock"] = false,
-    ["Moonstone Rock"] = false,
-    ["Prismatic Crystal"] = false
+    ["Rock"]              = false,
+    ["Tin Rock"]         = false,
+    ["Copper Rock"]       = false,
+    ["Bronze Rock"]       = false,
+    ["Iron Rock"]         = false,
+    ["Silver Rock"]       = false,
+    ["Gold Rock"]         = false,
+    ["Diamond Rock"]      = false,
+    ["Sapphire Rock"]     = false,
+    ["Topaz Rock"]        = false,
+    ["Amethyst Rock"]     = false,
+    ["Emerald Rock"]      = false,
+    ["Obsidian Rock"]     = false,
+    ["Moonstone Rock"]    = false,
+    ["Prismatic Crystal"] = false,
 }
 
-local ATTR_NAME = "itemName"
+local ATTR_NAME   = "itemName"
 local HEALTH_ATTR = "health"
 
-local player = game.Players.LocalPlayer
-local camera = workspace.CurrentCamera
-local VIM = game:GetService("VirtualInputManager")
+local player     = game.Players.LocalPlayer
+local camera     = workspace.CurrentCamera
+local VIM        = game:GetService("VirtualInputManager")
+local RunService = game:GetService("RunService")
 
-local lastPos = Vector3.new(0,0,0)
+local lastPos      = Vector3.zero
 local lastMoveTime = tick()
 
-local highlight = Instance.new("Highlight")
-highlight.FillColor = Color3.fromRGB(0, 255, 255)
-highlight.Parent = game:GetService("CoreGui")
-highlight.Enabled = false
+-- ── Highlight ──────────────────────────────────────────────
+local oreHighlight = Instance.new("Highlight")
+oreHighlight.FillColor           = Color3.fromRGB(0, 255, 255)
+oreHighlight.OutlineColor        = Color3.fromRGB(255, 255, 255)
+oreHighlight.FillTransparency    = 0.5
+oreHighlight.OutlineTransparency = 0
+oreHighlight.Parent              = game:GetService("CoreGui")
+oreHighlight.Enabled             = false
+
+-- ── Helpers ────────────────────────────────────────────────
 
 local function getCurrentIsland()
     local islandsFolder = workspace:FindFirstChild("Islands")
@@ -1206,102 +1258,137 @@ local function getCurrentIsland()
     return nil
 end
 
----
--- IDLE CHECKER THREAD (Updated for your Table Structure)
----
-task.spawn(function()
-    while true do
-        task.wait(1)
-        
-        if not AUTOFARM or not RANDOM_TP_ENABLED then 
-            lastMoveTime = tick() 
-            continue 
-        end
-        
-        local character = player.Character
-        local root = character and character:FindFirstChild("HumanoidRootPart")
-        
-        if root then
-            -- Check if player has moved
-            if (root.Position - lastPos).Magnitude > 2 then
-                lastPos = root.Position
-                lastMoveTime = tick()
-            else
-                -- Stuck detection
-                if tick() - lastMoveTime > IDLE_THRESHOLD then
-                    local myIsland = getCurrentIsland()
-                    if myIsland then
-                        local islandName = myIsland.Name
-                        local locations = IslandTeleports[islandName]
-                        
-                        -- Only TP if the island exists in your table and has coords
-                        if locations and #locations > 0 then
-                            local randomTarget = locations[math.random(1, #locations)]
-                            root.CFrame = CFrame.new(randomTarget)
-                            print("Stuck on " .. islandName .. ": Teleporting to random spot.")
-                        end
+local function worldToScreen(worldPos)
+    local screenPos, onScreen = camera:WorldToViewportPoint(worldPos)
+    return screenPos.X, screenPos.Y, onScreen
+end
+
+local function aimCameraAt(targetPos)
+    local currentCF = camera.CFrame
+    local targetCF  = CFrame.new(currentCF.Position, targetPos)
+    for i = 1, 5 do
+        camera.CFrame = currentCF:Lerp(targetCF, i / 5)
+        task.wait()
+    end
+end
+
+local function clickOnTarget(targetPart)
+    camera.CFrame = CFrame.new(camera.CFrame.Position, targetPart.Position)
+
+    local x, y, onScreen = worldToScreen(targetPart.Position)
+    if not onScreen then
+        local vp = camera.ViewportSize
+        x, y = vp.X / 2, vp.Y / 2
+    end
+
+    pcall(function()
+        VIM:SendMouseMoveEvent(x, y, game)
+        VIM:SendMouseButtonEvent(x, y, 0, true,  game, 1)
+        task.wait(0.02)
+        VIM:SendMouseButtonEvent(x, y, 0, false, game, 1)
+    end)
+end
+
+local function getNearestOre(island)
+    local root = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+    if not root then return nil end
+
+    local nearest, nearestDist = nil, math.huge
+
+    for _, obj in ipairs(island:GetDescendants()) do
+        local itemName = obj:GetAttribute(ATTR_NAME)
+        if obj:IsA("Model") and TARGET_ITEMS[itemName] == true then
+            local health = obj:GetAttribute(HEALTH_ATTR)
+            if health and health > 0 then
+                local part = obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart")
+                if part then
+                    local dist = (root.Position - part.Position).Magnitude
+                    if dist < nearestDist then
+                        nearestDist = dist
+                        nearest     = obj
                     end
-                    lastMoveTime = tick()
                 end
             end
         end
     end
-end)
 
----
--- MAIN AUTOFARM THREAD
----
+    return nearest
+end
+
+-- ── Idle / Random TP thread ────────────────────────────────
 task.spawn(function()
     while true do
-        task.wait(0.5)
-        if not AUTOFARM then continue end
+        task.wait(1)
+
+        if not AUTOFARM or not RANDOM_TP_ENABLED or isMining then
+            lastMoveTime = tick()
+            continue
+        end
+
+        local character = player.Character
+        local root = character and character:FindFirstChild("HumanoidRootPart")
+        if not root then continue end
+
+        if (root.Position - lastPos).Magnitude > 2 then
+            lastPos      = root.Position
+            lastMoveTime = tick()
+        elseif tick() - lastMoveTime > IDLE_THRESHOLD then
+            local myIsland = getCurrentIsland()
+            if myIsland then
+                local locations = IslandTeleports[myIsland.Name]
+                if locations and #locations > 0 then
+                    root.CFrame = locations[math.random(1, #locations)]
+                    print("[IdleTP] Teleported on", myIsland.Name)
+                end
+            end
+            lastMoveTime = tick()
+        end
+    end
+end)
+
+-- ── Main autofarm thread ───────────────────────────────────
+task.spawn(function()
+    while true do
+        task.wait(0.3)
+        if not AUTOFARM then
+            isMining = false
+            continue
+        end
 
         local myIsland = getCurrentIsland()
         if not myIsland then continue end
 
-        for _, object in ipairs(myIsland:GetDescendants()) do
-            if not AUTOFARM then break end
-
-            local itemName = object:GetAttribute(ATTR_NAME)
-            if object:IsA("Model") and TARGET_ITEMS[itemName] == true then
-                
-                local targetPart = object.PrimaryPart or object:FindFirstChildWhichIsA("BasePart")
-                local currentHealth = object:GetAttribute(HEALTH_ATTR)
-                
-                if targetPart and currentHealth and currentHealth > 0 then
-                    if OREHIGHLIGHT then
-                        highlight.Adornee = object
-                        highlight.Enabled = true
-                    end
-
-                    local character = player.Character
-                    local root = character and character:FindFirstChild("HumanoidRootPart")
-                    if root then
-                        root.CFrame = CFrame.new(targetPart.Position + Vector3.new(0, 2, 4), targetPart.Position)
-                    end
-                    
-                    task.wait(0.3)
-
-                    while AUTOFARM and object.Parent and (object:GetAttribute(HEALTH_ATTR) or 0) > 0 do
-                        camera.CFrame = CFrame.new(camera.CFrame.Position, targetPart.Position)
-                        
-                        local vpSize = camera.ViewportSize
-                        local x, y = vpSize.X / 2, vpSize.Y / 2
-
-                        pcall(function()
-                            VIM:SendMouseMoveEvent(x + 1, y + 1, game)
-                            VIM:SendMouseButtonEvent(x, y, 0, true, game, 1)
-                            task.wait(0.02)
-                            VIM:SendMouseButtonEvent(x, y, 0, false, game, 1)
-                        end)
-                        
-                        task.wait(CLICK_COOLDOWN)
-                    end
-                    
-                    highlight.Enabled = false
-                end
-            end
+        local ore = getNearestOre(myIsland)
+        if not ore then
+            isMining = false
+            continue
         end
+
+        local targetPart = ore.PrimaryPart or ore:FindFirstChildWhichIsA("BasePart")
+        if not targetPart then continue end
+
+        local root = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+        if not root then continue end
+
+        root.CFrame = CFrame.new(targetPart.Position + Vector3.new(0, 2, 4), targetPart.Position)
+        task.wait(0.2)
+
+        aimCameraAt(targetPart.Position)
+
+        if OREHIGHLIGHT then
+            oreHighlight.Adornee = ore
+            oreHighlight.Enabled = true
+        end
+
+        isMining = true
+        while AUTOFARM and ore.Parent and (ore:GetAttribute(HEALTH_ATTR) or 0) > 0 and TARGET_ITEMS[ore:GetAttribute(ATTR_NAME)] == true do
+            camera.CFrame = CFrame.new(camera.CFrame.Position, targetPart.Position)
+            clickOnTarget(targetPart)
+            task.wait(CLICK_COOLDOWN)
+        end
+        isMining = false
+
+        oreHighlight.Enabled = false
     end
 end)
 
@@ -1316,12 +1403,29 @@ Ores:AddToggle('OreAuto_Enable', {
 })
 
 Ores:AddToggle('OreHighlight_Enable', {
-    Text = 'Highlight Ore',
+    Text    = 'Highlight Ore',
     Default = false,
     Tooltip = 'Enables Ore Highlighting',
 
     Callback = function(Value)
-        OREHIGHLIGHT = Value
+        OREHIGHLIGHT         = Value
+        oreHighlight.Enabled = Value
+    end
+}):AddColorPicker('OreHighlightFillColor', {
+    Default      = Color3.fromRGB(0, 255, 255),
+    Title        = 'Fill Color',
+    Transparency = 0.5,
+
+    Callback = function(Value)
+        oreHighlight.FillColor = Value
+    end
+}):AddColorPicker('OreHighlightOutlineColor', {
+    Default      = Color3.fromRGB(255, 255, 255),
+    Title        = 'Outline Color',
+    Transparency = 0,
+
+    Callback = function(Value)
+        oreHighlight.OutlineColor = Value
     end
 })
 
@@ -1336,14 +1440,16 @@ Ores:AddToggle('OreRandomTeleport', {
 })
 
 Ores:AddDropdown('OreType', {
-    Values = { 'Rock', 'Copper Rock', 'Bronze Rock', 'Iron Rock', 'Silver Rock', 'Gold Rock', 'Diamond Rock', 'Sapphire Rock', 'Topaz Rock', 'Amethyst Rock', 'Amethyst Rock', 'Emerald Rock', 'Obsidian Rock', 'Moonstone Rock', 'Prismatic Crystal' },
-    Default = 0, 
-    Multi = true, 
-
-    Text = 'Ore type',
+    Values  = { 'Rock', 'Tin Rock', 'Copper Rock', 'Bronze Rock', 'Iron Rock', 'Silver Rock', 'Gold Rock', 'Diamond Rock', 'Sapphire Rock', 'Topaz Rock', 'Amethyst Rock', 'Emerald Rock', 'Obsidian Rock', 'Moonstone Rock', 'Prismatic Crystal' },
+    Default = 0,
+    Multi   = true,
+    Text    = 'Ore type',
     Tooltip = 'Chooses the types of ores to autofarm',
 
     Callback = function(SelectedTable)
+        for oreName in pairs(TARGET_ITEMS) do
+            TARGET_ITEMS[oreName] = false
+        end
         for oreName, isSelected in pairs(SelectedTable) do
             TARGET_ITEMS[oreName] = isSelected
         end
@@ -1351,18 +1457,17 @@ Ores:AddDropdown('OreType', {
 })
 
 Ores:AddSlider('Idle_Limit', {
-    Text = 'Idle Limit',
+    Text    = 'Idle Limit',
     Default = 30,
-    Min = 0,
-    Max = 1000,
-    Rounding = 0.1,
+    Min     = 0,
+    Max     = 1000,
+    Rounding = 1,
     Compact = false,
 
     Callback = function(Value)
         IDLE_THRESHOLD = Value
     end
 })
-
 
 local ESP = Tabs.Visuals:AddLeftGroupbox('Visuals')
 
