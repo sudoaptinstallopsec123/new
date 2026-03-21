@@ -510,6 +510,35 @@ local function getNextFarmIsland(currentIslandName)
     return enabled[1]
 end
 
+local function destroyLavaTouchInterests()
+    local islandsFolder = workspace:FindFirstChild("Islands")
+    if not islandsFolder then return end
+
+    local volcanoIsland = islandsFolder:FindFirstChild("Volcano Island")
+    if not volcanoIsland then return end
+
+    local lavaParts = volcanoIsland:FindFirstChild("LavaParts")
+    if not lavaParts then return end
+
+    for _, part in ipairs(lavaParts:GetDescendants()) do
+        if part:IsA("TouchTransmitter") then
+            part:Destroy()
+        end
+    end
+end
+
+local lastIsland = nil
+
+RunService.Heartbeat:Connect(function()
+    local island = getCurrentIsland()
+    if island and island.Name == "Volcano Island" and lastIsland ~= "Volcano Island" then
+        lastIsland = "Volcano Island"
+        destroyLavaTouchInterests()
+    elseif (not island or island.Name ~= "Volcano Island") then
+        lastIsland = island and island.Name or nil
+    end
+end)
+
 -- ============================================================
 --  AUTO-CLICKER
 -- ============================================================
@@ -2304,6 +2333,50 @@ Others:AddButton({
     end,
     DoubleClick = false,
     Tooltip = 'Teleports to the boat'
+})
+
+Others:AddButton({
+    Text = 'TP to lowest player server',
+    Func = function()
+                local HttpService = game:GetService("HttpService")
+        local TeleportService = game:GetService("TeleportService")
+        local placeId = game.PlaceId
+
+        local lowestServer = nil
+        local lowestPlayers = math.huge
+        local cursor = ""
+
+        repeat
+            local url = string.format(
+                "https://games.roblox.com/v1/games/%d/servers/Public?sortOrder=Asc&limit=100&cursor=%s",
+                placeId, cursor
+            )
+
+            local success, result = pcall(function()
+                return HttpService:JSONDecode(game:HttpGet(url))
+            end)
+
+            if not success or not result or not result.data then break end
+
+            for _, server in ipairs(result.data) do
+                if server.playing < lowestPlayers and server.playing > 0 then
+                    lowestPlayers = server.playing
+                    lowestServer = server.id
+                end
+            end
+
+            cursor = result.nextPageCursor or ""
+        until cursor == "" or cursor == nil
+
+        if lowestServer then
+            print("[Server Hop] Joining server with " .. lowestPlayers .. " player(s). Job ID: " .. lowestServer)
+            TeleportService:TeleportToPlaceInstance(placeId, lowestServer, game:GetService("Players").LocalPlayer)
+        else
+            print("[Server Hop] No valid server found.")
+        end
+    end,
+    DoubleClick = false,
+    Tooltip = 'Teleports to the lowest player server'
 })
 
 local ScreenGui = Instance.new("ScreenGui")
