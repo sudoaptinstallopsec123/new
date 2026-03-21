@@ -959,6 +959,51 @@ LeftGroupBox:AddToggle('Autofarm_Enable', {
     end
 })
 
+local m_References = require(game:GetService("ReplicatedStorage").References)
+local Utilities = m_References.Utilities
+local m_Data = require(m_References.PlayerScripts.Priority.Data)
+local LocalPlayer = game:GetService("Players").LocalPlayer
+
+_G.AutoLasso = _G.AutoLasso or { Enabled = false }
+
+local function equipLasso()
+    local ok, err = pcall(function()
+        if not (_G.AutoLasso and _G.AutoLasso.Enabled) then return end
+        local lassoSlot = m_Data.GetLocal({ "quickEquipment", "Lasso" })
+        if not lassoSlot then return end
+        local equipped = m_Data.GetLocal({ "temporary", "equippedEquipment" })
+        if equipped ~= lassoSlot then
+            Utilities.Network:FireServer("QuickEquipment", "Use", "Lasso")
+        end
+    end)
+    if not ok then
+        warn("[AutoLasso] Error:", err)
+    end
+end
+
+task.spawn(function()
+    while true do
+        task.wait(0.1)
+        equipLasso()
+    end
+end)
+
+LocalPlayer.CharacterAdded:Connect(function()
+    task.wait(1.5)
+    equipLasso()
+end)
+
+_G.AutoLasso = _G.AutoLasso or { Enabled = false }
+
+LeftGroupBox:AddToggle('AutoLasso_Enable', {
+    Text = 'Auto Lasso',
+    Default = false,
+    Tooltip = 'Enables Auto Lasso',
+    Callback = function(Value)
+        _G.AutoLasso.Enabled = Value
+    end
+})
+
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local HorseVariants = require(ReplicatedStorage.References.HorseVariants)
 local SpecialItemIndicators = require(ReplicatedStorage.References.SpecialItemIndicators)
@@ -1200,21 +1245,6 @@ LeftGroupBox:AddToggle('Autosell_Enable', {
     end
 })
 
-local horseselloptions = LeftGroupBox:AddDropdown('HorsestoLock', {
-    Text     = 'Lock Horses',
-    Values   = LOCK_INDICATOR_OPTIONS,
-    Default  = "",
-    Multi    = true,
-    Tooltip  = 'Select which horse types to lock instead of sell',
-    Callback = function(Value)
-        for _, name in ipairs(LOCK_INDICATOR_OPTIONS) do
-            LOCK_INDICATORS[name] = Value[name] == true
-        end
-    end
-})
-
-
--- Autoclick toggle
 LeftGroupBox:AddToggle('Autoclick_Enable', {
     Text = 'Autoclick',
     Default = false,
@@ -1264,6 +1294,20 @@ LeftGroupBox:AddSlider('Idle_Limit', {
         IDLE_LIMIT = Value
     end
 })
+
+local horseselloptions = LeftGroupBox:AddDropdown('HorsestoLock', {
+    Text     = 'Lock Horses',
+    Values   = LOCK_INDICATOR_OPTIONS,
+    Default  = "",
+    Multi    = true,
+    Tooltip  = 'Select which horse types to lock instead of sell',
+    Callback = function(Value)
+        for _, name in ipairs(LOCK_INDICATOR_OPTIONS) do
+            LOCK_INDICATORS[name] = Value[name] == true
+        end
+    end
+})
+
 
 local RightIslandsGroupBox = Tabs.Main:AddRightGroupbox('Island settings')
 
@@ -1373,6 +1417,7 @@ local TARGET_ITEMS = {
     ["Obsidian Rock"]     = false,
     ["Moonstone Rock"]    = false,
     ["Prismatic Crystal"] = false,
+    ["Erupted Deposit"]   = false,
 }
 
 local ATTR_NAME   = "itemName"
@@ -1588,7 +1633,7 @@ Ores:AddToggle('OreRandomTeleport', {
 })
 
 Ores:AddDropdown('OreType', {
-    Values  = { 'Rock', 'Tin Rock', 'Copper Rock', 'Bronze Rock', 'Iron Rock', 'Silver Rock', 'Gold Rock', 'Diamond Rock', 'Sapphire Rock', 'Topaz Rock', 'Amethyst Rock', 'Emerald Rock', 'Obsidian Rock', 'Moonstone Rock', 'Prismatic Crystal' },
+    Values  = { 'Rock', 'Tin Rock', 'Copper Rock', 'Bronze Rock', 'Iron Rock', 'Silver Rock', 'Gold Rock', 'Diamond Rock', 'Sapphire Rock', 'Topaz Rock', 'Amethyst Rock', 'Emerald Rock', 'Obsidian Rock', 'Moonstone Rock', 'Prismatic Crystal', 'Erupted Deposit' },
     Default = 0,
     Multi   = true,
     Text    = 'Ore type',
