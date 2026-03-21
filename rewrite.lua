@@ -539,6 +539,13 @@ RunService.Heartbeat:Connect(function()
     end
 end)
 
+task.spawn(function()
+    while true do
+        destroyLavaTouchInterests()
+        task.wait(3)
+    end
+end)
+
 -- ============================================================
 --  AUTO-CLICKER
 -- ============================================================
@@ -1394,6 +1401,39 @@ RightGroupBox:AddToggle('Autotrain_Enable', {
 
 local Ores = Tabs.Main:AddLeftGroupbox('Ores')
 
+task.spawn(function()
+    while true do
+        task.wait(0.1)
+        equipHarvester()
+    end
+end)
+
+LocalPlayer.CharacterAdded:Connect(function()
+    task.wait(1.5)
+    equipHarvester()
+end)
+
+local VolcanoTeleports = {
+    CFrame.new(3536.414, 20.998, -8541.338, -0.986777, 0.000000, 0.162083, 0.000000, 1.000000, -0.000000, -0.162083, -0.000000, -0.986777),
+    CFrame.new(3081.965, 20.998, -8160.560, 0.430185, 0.000000, -0.902741, 0.000000, 1.000000, 0.000000, 0.902741, -0.000000, 0.430185),
+    CFrame.new(3040.943, 21.278, -7674.188, 0.183440, 0.000000, -0.983031, 0.000000, 1.000000, 0.000000, 0.983031, -0.000000, 0.183440),
+    CFrame.new(3216.217, 31.396, -7417.089, -0.624938, 0.000000, -0.780675, 0.000000, 1.000000, -0.000000, 0.780675, -0.000000, -0.624938),
+    CFrame.new(3437.597, 20.998, -7198.555, -0.661883, -0.000000, -0.749607, 0.000000, 1.000000, -0.000000, 0.749607, -0.000000, -0.661883),
+    CFrame.new(3773.379, 20.998, -7077.844, -0.083580, -0.000000, -0.996501, -0.000000, 1.000000, -0.000000, 0.996501, 0.000000, -0.083580),
+    CFrame.new(4060.921, 20.998, -7068.069, -0.231128, 0.000000, -0.972923, 0.000000, 1.000000, 0.000000, 0.972923, -0.000000, -0.231128),
+    CFrame.new(4364.559, 20.998, -7172.213, 0.760222, -0.000000, -0.649663, -0.000000, 1.000000, -0.000000, 0.649663, 0.000000, 0.760222),
+    CFrame.new(4582.479, 20.998, -7443.499, 0.967904, 0.000000, 0.251320, 0.000000, 1.000000, -0.000000, -0.251320, 0.000000, 0.967904),
+    CFrame.new(4611.561, 20.998, -7778.034, 0.980821, 0.000000, -0.194913, -0.000000, 1.000000, -0.000000, 0.194913, 0.000000, 0.980821),
+    CFrame.new(4505.688, 21.692, -8218.074, -0.065622, 0.000000, 0.997845, -0.000000, 1.000000, -0.000000, -0.997845, -0.000000, -0.065622),
+    CFrame.new(4175.913, 21.119, -8487.763, 0.747902, 0.000000, 0.663810, -0.000000, 1.000000, 0.000000, -0.663810, -0.000000, 0.747902),
+    CFrame.new(3854.704, 20.998, -8574.500, 0.874451, 0.000000, -0.485114, -0.000000, 1.000000, 0.000000, 0.485114, -0.000000, 0.874451),
+    CFrame.new(3382.399, 20.998, -8496.440, -0.170347, 0.000000, 0.985384, -0.000000, 1.000000, -0.000000, -0.985384, -0.000000, -0.170347),
+    CFrame.new(3150.118, 27.933, -8297.297, -0.923549, -0.000000, 0.383481, -0.000000, 1.000000, 0.000000, -0.383481, 0.000000, -0.923549),
+    CFrame.new(3583.769, 524.847, -7929.497, -0.971305, 0.000000, -0.237838, -0.000000, 1.000000, 0.000000, 0.237838, 0.000000, -0.971305),
+    CFrame.new(3740.703, 547.900, -8010.287, 0.990457, 0.000000, -0.137825, -0.000000, 1.000000, -0.000000, 0.137825, 0.000000, 0.990457),
+    CFrame.new(3907.742, 526.523, -7917.505, -0.471205, -0.000000, -0.882024, -0.000000, 1.000000, -0.000000, 0.882024, 0.000000, -0.471205),
+}
+
 local AUTOFARM          = false
 local OREHIGHLIGHT      = false
 local RANDOM_TP_ENABLED = false
@@ -1528,7 +1568,7 @@ task.spawn(function()
         elseif tick() - lastMoveTime > IDLE_THRESHOLD then
             local myIsland = getCurrentIsland()
             if myIsland then
-                local locations = IslandTeleports[myIsland.Name]
+                local locations = (myIsland.Name == "Volcano Island") and VolcanoTeleports or IslandTeleports[myIsland.Name]
                 if locations and #locations > 0 then
                     root.CFrame = locations[math.random(1, #locations)]
                     print("[IdleTP] Teleported on", myIsland.Name)
@@ -1540,11 +1580,18 @@ task.spawn(function()
 end)
 
 -- ── Main autofarm thread ───────────────────────────────────
+local followConnection = nil
+
 task.spawn(function()
     while true do
         task.wait(0.3)
+
         if not AUTOFARM then
             isMining = false
+            if followConnection then
+                followConnection:Disconnect()
+                followConnection = nil
+            end
             continue
         end
 
@@ -1554,33 +1601,73 @@ task.spawn(function()
         local ore = getNearestOre(myIsland)
         if not ore then
             isMining = false
+            if followConnection then
+                followConnection:Disconnect()
+                followConnection = nil
+            end
             continue
         end
 
         local targetPart = ore.PrimaryPart or ore:FindFirstChildWhichIsA("BasePart")
         if not targetPart then continue end
 
-        local root = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
-        if not root then continue end
-
-        root.CFrame = CFrame.new(targetPart.Position + Vector3.new(0, 2, 4), targetPart.Position)
-        task.wait(0.2)
-
-        aimCameraAt(targetPart.Position)
-
         if OREHIGHLIGHT then
             oreHighlight.Adornee = ore
             oreHighlight.Enabled = true
         end
 
+        -- Determine hover offset based on ore type
+        local isErupted = ore:GetAttribute(ATTR_NAME) == "Erupted Deposit"
+        local hoverOffset = isErupted and Vector3.new(0, 10, 0) or Vector3.new(0, 2, 4)
+
+        -- Disconnect any existing follow before starting a new one
+        if followConnection then
+            followConnection:Disconnect()
+            followConnection = nil
+        end
+
+        aimCameraAt(targetPart.Position)
+
+        -- Wait before locking onto Erupted Deposit
+        if isErupted then
+            task.wait(3)
+            if not ore.Parent or (ore:GetAttribute(HEALTH_ATTR) or 0) <= 0 then
+                continue
+            end
+        end
+
+        -- Heartbeat continuously locks player onto the ore
         isMining = true
+        followConnection = RunService.Heartbeat:Connect(function()
+            local root = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+            if not root then return end
+
+            if not ore or not ore.Parent or (ore:GetAttribute(HEALTH_ATTR) or 0) <= 0 then
+                followConnection:Disconnect()
+                followConnection = nil
+                isMining = false
+                oreHighlight.Enabled = false
+                return
+            end
+
+            root.CFrame = CFrame.new(targetPart.Position + hoverOffset, targetPart.Position)
+            root.AssemblyLinearVelocity = Vector3.zero
+            root.AssemblyAngularVelocity = Vector3.zero
+        end)
+
+        -- Click loop while ore is alive
         while AUTOFARM and ore.Parent and (ore:GetAttribute(HEALTH_ATTR) or 0) > 0 and TARGET_ITEMS[ore:GetAttribute(ATTR_NAME)] == true do
             camera.CFrame = CFrame.new(camera.CFrame.Position, targetPart.Position)
             clickOnTarget(targetPart)
             task.wait(CLICK_COOLDOWN)
         end
-        isMining = false
 
+        -- Cleanup after ore dies
+        if followConnection then
+            followConnection:Disconnect()
+            followConnection = nil
+        end
+        isMining = false
         oreHighlight.Enabled = false
     end
 end)
@@ -1592,6 +1679,56 @@ Ores:AddToggle('OreAuto_Enable', {
 
     Callback = function(Value)
         AUTOFARM = Value
+    end
+})
+
+local m_References = require(game:GetService("ReplicatedStorage").References)
+local Utilities = m_References.Utilities
+local m_Data = require(m_References.PlayerScripts.Priority.Data)
+local LocalPlayer = game:GetService("Players").LocalPlayer
+
+local isEquipped = false
+
+local function equipHarvester()
+    local ok, err = pcall(function()
+        local harvesterSlot = m_Data.GetLocal({ "quickEquipment", "Harvester" })
+        if not harvesterSlot then return end
+        if not isEquipped then
+            isEquipped = true
+            Utilities.Network:FireServer("QuickEquipment", "Use", "Harvester")
+        end
+    end)
+    if not ok then
+        warn("[AutoHarvester] Error:", err)
+    end
+end
+
+local function onCharacterAdded()
+    isEquipped = false
+    task.wait(1.5)
+    equipHarvester()
+end
+
+-- watch for equip changes
+m_Data.BindLocal({ "temporary", "equippedEquipment" }, function()
+    local harvesterSlot = m_Data.GetLocal({ "quickEquipment", "Harvester" })
+    local equipped = m_Data.GetLocal({ "temporary", "equippedEquipment" })
+    if equipped ~= harvesterSlot then
+        isEquipped = false
+        task.wait(0.1)
+        equipHarvester()
+    end
+end, true)
+
+if LocalPlayer.Character then onCharacterAdded() end
+LocalPlayer.CharacterAdded:Connect(onCharacterAdded)
+
+Ores:AddToggle('AutoHarvester_Enable', {
+    Text = 'Auto Harvester',
+    Default = false,
+    Tooltip = 'Enables Auto Harvester',
+    Callback = function(Value)
+        isEquipped = Value
     end
 })
 
