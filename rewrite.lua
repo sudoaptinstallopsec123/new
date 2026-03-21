@@ -1268,7 +1268,6 @@ LeftGroupBox:AddSlider('Autoclick_Duration', {
     Min = 0,
     Max = 100,
     Rounding = 1,
-    Compact = false,
 
     Callback = function(Value)
         AUTOCLICK_RATE = Value
@@ -1400,18 +1399,6 @@ RightGroupBox:AddToggle('Autotrain_Enable', {
 })
 
 local Ores = Tabs.Main:AddLeftGroupbox('Ores')
-
-task.spawn(function()
-    while true do
-        task.wait(0.1)
-        equipHarvester()
-    end
-end)
-
-LocalPlayer.CharacterAdded:Connect(function()
-    task.wait(1.5)
-    equipHarvester()
-end)
 
 local VolcanoTeleports = {
     CFrame.new(3536.414, 20.998, -8541.338, -0.986777, 0.000000, 0.162083, 0.000000, 1.000000, -0.000000, -0.162083, -0.000000, -0.986777),
@@ -1688,9 +1675,11 @@ local m_Data = require(m_References.PlayerScripts.Priority.Data)
 local LocalPlayer = game:GetService("Players").LocalPlayer
 
 local isEquipped = false
+local enabled = false
 
 local function equipHarvester()
     local ok, err = pcall(function()
+        if not enabled then return end
         local harvesterSlot = m_Data.GetLocal({ "quickEquipment", "Harvester" })
         if not harvesterSlot then return end
         if not isEquipped then
@@ -1709,7 +1698,6 @@ local function onCharacterAdded()
     equipHarvester()
 end
 
--- watch for equip changes
 m_Data.BindLocal({ "temporary", "equippedEquipment" }, function()
     local harvesterSlot = m_Data.GetLocal({ "quickEquipment", "Harvester" })
     local equipped = m_Data.GetLocal({ "temporary", "equippedEquipment" })
@@ -1728,7 +1716,11 @@ Ores:AddToggle('AutoHarvester_Enable', {
     Default = false,
     Tooltip = 'Enables Auto Harvester',
     Callback = function(Value)
-        isEquipped = Value
+        enabled = Value
+        if enabled then
+            isEquipped = false
+            equipHarvester()
+        end
     end
 })
 
