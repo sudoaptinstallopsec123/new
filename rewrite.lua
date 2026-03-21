@@ -359,7 +359,7 @@ local boatTeleports = {
 --  CONFIG
 -- ============================================================
 local HOVER_HEIGHT      = 3
-local IDLE_LIMIT        = 5
+local IDLE_LIMIT        = 40
 local AUTOCLICK_RATE    = 0.1
 
 -- ============================================================
@@ -935,7 +935,7 @@ local HorseVariants = require(ReplicatedStorage.References.HorseVariants)
 local SpecialItemIndicators = require(ReplicatedStorage.References.SpecialItemIndicators)
 
 -- ─────────────────────────────────────────────
--- Lock options for dropdown
+-- Lock options
 -- ─────────────────────────────────────────────
 
 local LOCK_INDICATOR_OPTIONS = {
@@ -950,64 +950,153 @@ local LOCK_INDICATOR_OPTIONS = {
     "rareCoat",
 }
 
--- All enabled by default
 local LOCK_INDICATORS = {}
 for _, v in ipairs(LOCK_INDICATOR_OPTIONS) do
     LOCK_INDICATORS[v] = true
 end
 
+local RARE_THRESHOLD = 0.975
+
+-- ─────────────────────────────────────────────
+-- Direct island unique hair colour key lookup
+-- (matches the keys used in HorseVariants.maneAndTailColour)
+-- ─────────────────────────────────────────────
+
+local ISLAND_UNIQUE_HAIR = {
+    ["blessed"]          = true,
+    ["iceyBlue"]         = true,
+    ["iceyWhite"]        = true,
+    ["iceyPink"]         = true,
+    ["iceyBlack"]        = true,
+    ["iceyGreen"]        = true,
+    ["winterStreaks"]     = true,
+    ["flowery"]          = true,
+    ["pearlyGreen"]      = true,
+    ["leafy"]            = true,
+    ["pearly"]           = true,
+    ["pastelStreaks"]     = true,
+    ["leathery"]         = true,
+    ["royalStreaks"]      = true,
+    ["cowPrint"]         = true,
+    ["pearlyPink"]       = true,
+    ["clearQuartz"]      = true,
+    ["zebraStripes"]     = true,
+    ["dustyFade"]        = true,
+    ["limestone"]        = true,
+    ["sandstone"]        = true,
+    ["ruby"]             = true,
+    ["pearlyRed"]        = true,
+    ["glacierGreen"]     = true,
+    ["glacierPink"]      = true,
+    ["glacierBlue"]      = true,
+    ["snowyGlacierFade"] = true,
+    ["pinkCowPrint"]     = true,
+    ["diamond"]          = true,
+    ["sapphire"]         = true,
+    ["pearlyOrange"]     = true,
+    ["sunriseStreaks"]    = true,
+    ["amethyst"]         = true,
+    ["topaz"]            = true,
+    ["jaguarSpots"]      = true,
+    ["mossy"]            = true,
+    ["tigerStripes"]     = true,
+    ["emerald"]          = true,
+    ["deepSpace"]        = true,
+    ["neonBlue"]         = true,
+    ["obsidian"]         = true,
+    ["neonPurple"]       = true,
+    ["moonstone"]        = true,
+    ["pearlyBlue"]       = true,
+    ["volcanicOrange"]   = true,
+    ["pearlyBlack"]      = true,
+    ["crackedLavaFade"]  = true,
+    ["volcanicBlack"]    = true,
+    ["prismatic"]        = true,
+}
+
+local ACTION_DELAY = 0.5
+
 local function shouldLockHorse(itemData)
     if not itemData then return false end
+    local variants = itemData.variants
+    if not variants then return false end
 
-    -- Check coat via HorseVariants.colour
-    if itemData.variants and itemData.variants.colour then
-        local coatEntry = HorseVariants.colour and HorseVariants.colour[itemData.variants.colour]
+    -- ── 1. Check coat colour ──────────────────────────────────────────
+    if variants.colour then
+        local coatEntry = HorseVariants.colour[variants.colour]
         if coatEntry then
             local indicator = coatEntry.specialItemIndicator
 
             if indicator and LOCK_INDICATORS[indicator] then
+                warn("[AutoSell] LOCK - coat indicator:", indicator)
                 return true
             end
 
-            if coatEntry.rarityFloat == 1 and not indicator and not coatEntry.unbreedable then
-                if LOCK_INDICATORS["rareCoat"] then
+            if LOCK_INDICATORS["rareCoat"]
+                and (coatEntry.rarityFloat or 0) >= RARE_THRESHOLD
+            then
+                warn("[AutoSell] LOCK - rare coat, rarityFloat:", coatEntry.rarityFloat)
+                return true
+            end
+        end
+    end
+
+    -- ── 2. Check mane & tail colour via indicator ─────────────────────
+    for _, key in {"maneColour", "tailColour"} do
+        local val = variants[key]
+        if val then
+            local hairEntry = HorseVariants.maneAndTailColour[val]
+            if hairEntry then
+                local indicator = hairEntry.specialItemIndicator
+                if indicator and LOCK_INDICATORS[indicator] then
+                    warn("[AutoSell] LOCK - hair indicator:", indicator, "from", key)
                     return true
                 end
             end
-        end
-    end
 
-    -- Check mane/tail colour via HorseVariants.maneAndTailColour
-    if itemData.variants then
-        for _, key in {"maneColour", "tailColour"} do
-            local val = itemData.variants[key]
-            if val then
-                local hairEntry = HorseVariants.maneAndTailColour and HorseVariants.maneAndTailColour[val]
-                if hairEntry then
-                    local indicator = hairEntry.specialItemIndicator
-                    if indicator and LOCK_INDICATORS[indicator] then
-                        return true
-                    end
-                end
+            -- ── 3. Direct island unique hair colour key check ─────────
+            -- Fallback in case indicator lookup fails
+            if LOCK_INDICATORS["islandUniqueHairColour"] and ISLAND_UNIQUE_HAIR[val] then
+                warn("[AutoSell] LOCK - direct island unique hair match:", val, "from", key)
+                return true
             end
         end
     end
 
-    -- Check item's own specialItemIndicator directly
-    if itemData.specialItemIndicator then
-        if LOCK_INDICATORS[itemData.specialItemIndicator] then
+    -- ── 4. Check mismatch (mane colour ≠ tail colour) ────────────────
+    if LOCK_INDICATORS["mismatchHairColour"] then
+        local mane = itemData.maneColourOg or variants.maneColour
+        local tail = itemData.tailColourOg or variants.tailColour
+        if mane and tail and mane ~= tail then
+            warn("[AutoSell] LOCK - mismatch mane:", mane, "tail:", tail)
             return true
         end
+    end
+
+    -- ── 5. Check naturally dyed ───────────────────────────────────────
+    if LOCK_INDICATORS["naturallyDyedHairColour"] and itemData.isNatDyed then
+        warn("[AutoSell] LOCK - naturally dyed")
+        return true
+    end
+
+    -- ── 6. Check item's own top-level specialItemIndicator ───────────
+    if itemData.specialItemIndicator and LOCK_INDICATORS[itemData.specialItemIndicator] then
+        warn("[AutoSell] LOCK - item indicator:", itemData.specialItemIndicator)
+        return true
     end
 
     return false
 end
 
+-- ─────────────────────────────────────────────
+-- Module acquisition
+-- ─────────────────────────────────────────────
+
 local Modules = getloadedmodules()
 local Network = nil
 local InventoryHandler = nil
 
-for Index, Value in Modules do
+for _, Value in Modules do
     if not Value or Value.ClassName ~= "ModuleScript" then continue end
     if Value.Name == "Network" then
         Network = require(Value)
@@ -1016,22 +1105,52 @@ for Index, Value in Modules do
     end
 end
 
+-- ─────────────────────────────────────────────
+-- Autosell toggle
+-- ─────────────────────────────────────────────
+
 local autosell_enabled = false
 local bindConnection = nil
 
 local function toggleAutosell(state)
-    autosell_enabled = state ~= nil and state or not autosell_enabled
+    autosell_enabled = (state ~= nil) and state or (not autosell_enabled)
 
     if autosell_enabled then
         if not bindConnection then
-            bindConnection = InventoryHandler.Bind("Added", function(a, itemData)
+            bindConnection = InventoryHandler.Bind("Added", function(guid, itemData)
                 if not autosell_enabled then return end
 
-                if shouldLockHorse(itemData) then
-                    Network:FireServer("Inventory", "Lock", a)
+                -- DEBUG
+                warn("=== NEW HORSE ADDED ===")
+                warn("GUID:", guid)
+                if itemData then
+                    for k, v in pairs(itemData) do
+                        if type(v) == "table" then
+                            warn(k, "=>")
+                            for k2, v2 in pairs(v) do
+                                warn("   ", k2, "=", tostring(v2))
+                            end
+                        else
+                            warn(k, "=", tostring(v))
+                        end
+                    end
                 else
-                    Network:FireServer("Shopping", "QuickSellItem", a)
+                    warn("itemData is NIL")
                 end
+                warn("shouldLock:", shouldLockHorse(itemData))
+                warn("=======================")
+
+                task.delay(ACTION_DELAY, function()
+                    if not autosell_enabled then return end
+
+                    if shouldLockHorse(itemData) then
+                        warn("[AutoSell] Locking:", guid)
+                        Network:FireServer("Inventory", "Lock", guid)
+                    else
+                        warn("[AutoSell] Selling:", guid)
+                        Network:FireServer("Shopping", "QuickSellItem", guid)
+                    end
+                end)
             end)
         end
     else
