@@ -1659,6 +1659,18 @@ task.spawn(function()
     end
 end)
 
+-- Anti-AFK LocalScript
+-- Place inside StarterPlayerScripts
+
+local player = game:GetService("Players").LocalPlayer
+local virtualUser = game:GetService("VirtualUser")
+
+player.Idled:Connect(function()
+    virtualUser:Button2Down(Vector2.new(0, 0), workspace.CurrentCamera.CFrame)
+    task.wait(1)
+    virtualUser:Button2Up(Vector2.new(0, 0), workspace.CurrentCamera.CFrame)
+end)
+
 Ores:AddToggle('OreAuto_Enable', {
     Text = 'Enable',
     Default = false,
