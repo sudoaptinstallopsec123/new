@@ -424,6 +424,8 @@ end
 --  HELPERS
 -- ============================================================
 
+local wildherd_capture = false
+
 local function getCurrentIsland()
     local islandsFolder = workspace:FindFirstChild("Islands")
     if not islandsFolder then return nil end
@@ -472,16 +474,34 @@ local function getNearestHorse(root, island)
     local nearest  = nil
     local shortest = math.huge
 
-    for _, obj in ipairs(island:GetDescendants()) do
-        if obj:IsA("Model") then
-            local horseRoot  = obj:FindFirstChild("HumanoidRootPart")
-            local captureGui = obj:FindFirstChild("CaptureProgress", true)
+    if wildherd_capture then
+        -- Wild herd mode: horses are direct children of workspace,
+        -- identified by having a HumanoidRootPart, no folder parent.
+        for _, obj in ipairs(workspace:GetChildren()) do
+            if obj:IsA("Model") then
+                local horseRoot = obj:FindFirstChild("HumanoidRootPart")
+                if horseRoot then
+                    local dist = (root.Position - horseRoot.Position).Magnitude
+                    if dist < shortest then
+                        shortest = dist
+                        nearest  = horseRoot
+                    end
+                end
+            end
+        end
+    else
+        -- Default mode: horses are inside the island, identified by CaptureProgress GUI.
+        for _, obj in ipairs(island:GetDescendants()) do
+            if obj:IsA("Model") then
+                local horseRoot  = obj:FindFirstChild("HumanoidRootPart")
+                local captureGui = obj:FindFirstChild("CaptureProgress", true)
 
-            if horseRoot and captureGui then
-                local dist = (root.Position - horseRoot.Position).Magnitude
-                if dist < shortest then
-                    shortest = dist
-                    nearest  = horseRoot
+                if horseRoot and captureGui then
+                    local dist = (root.Position - horseRoot.Position).Magnitude
+                    if dist < shortest then
+                        shortest = dist
+                        nearest  = horseRoot
+                    end
                 end
             end
         end
@@ -571,8 +591,8 @@ task.spawn(function()
     local lockedHorse       = nil
     local followConn        = nil
     local isTravelling      = false
-    local noHorseTime       = 0   -- how long since any horse was found on this island
-    local STILL_TRAVEL_TIME = 40  -- seconds with no horses before switching island
+    local noHorseTime       = 0
+    local STILL_TRAVEL_TIME = 40
 
     local function disconnectFollow()
         if followConn then
@@ -672,7 +692,7 @@ task.spawn(function()
             -- No horse found
             disconnectFollow()
             idleTime    += 1
-            noHorseTime += 0.4  -- accumulates every tick (0.4s each)
+            noHorseTime += 0.4
 
             -- ── No horses for long enough → switch island ──
             if autotravel_enabled and noHorseTime >= STILL_TRAVEL_TIME then
@@ -681,7 +701,6 @@ task.spawn(function()
                     print("[AutoTravel] No horses for " .. STILL_TRAVEL_TIME .. "s, moving to: " .. next)
                     safeTravelTo(next)
                 else
-                    -- Only one island selected, random teleport within it
                     safeRandomTeleport(root)
                     noHorseTime = 0
                     idleTime    = 0
@@ -1802,6 +1821,8 @@ Ores:AddSlider('Idle_Limit', {
         IDLE_THRESHOLD = Value
     end
 })
+
+local Collectables = Tabs.Main:AddRightGroupbox('Collectables')
 
 local ESP = Tabs.Visuals:AddLeftGroupbox('Visuals')
 
