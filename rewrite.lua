@@ -985,6 +985,16 @@ LeftGroupBox:AddToggle('Autofarm_Enable', {
     end
 })
 
+LeftGroupBox:AddToggle('CatureHerds', {
+    Text = 'Capture Herds',
+    Default = false,
+    Tooltip = 'Enables Capture Herds',
+
+    Callback = function(Value)
+        wildherd_capture = Value  -- also fixed: was setting autosell_enabled directly, bypassing toggleAutosell
+    end
+})
+
 local m_References = require(game:GetService("ReplicatedStorage").References)
 local Utilities = m_References.Utilities
 local m_Data = require(m_References.PlayerScripts.Priority.Data)
