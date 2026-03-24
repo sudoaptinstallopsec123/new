@@ -1834,7 +1834,82 @@ Ores:AddSlider('Idle_Limit', {
 
 local Collectables = Tabs.Main:AddRightGroupbox('Collectables')
 
+
 local ESP = Tabs.Visuals:AddLeftGroupbox('Visuals')
+
+-- ============================================================
+--  GRADIENT SETTINGS
+-- ============================================================
+local custom_gradient_enabled = false
+
+-- Custom gradient color stops (RGB 0-255)
+local gradient_color1 = Color3.fromRGB(255, 200, 100)
+local gradient_color2 = Color3.fromRGB(100, 200, 100)
+local gradient_color3 = Color3.fromRGB(50,  200, 100)
+
+-- Default gradient color stops (white)
+local gradient_default1 = Color3.fromRGB(255, 255, 255)
+local gradient_default2 = Color3.fromRGB(255, 255, 255)
+local gradient_default3 = Color3.fromRGB(255, 255, 255)
+
+local function getGradient()
+    local radiusModel = workspace:FindFirstChild("RadiusModel")
+    if not radiusModel then return nil end
+
+    local radiusPart = radiusModel:FindFirstChild("RadiusPart")
+    if not radiusPart then return nil end
+
+    local main = radiusPart:FindFirstChild("Main")
+    if not main then return nil end
+
+    local frame = main:FindFirstChild("Frame")
+    if not frame then return nil end
+
+    local uiStroke = frame:FindFirstChild("UIStroke")
+    if not uiStroke then return nil end
+
+    return uiStroke:FindFirstChild("UIGradient")
+end
+
+local function applyGradient()
+    local gradient = getGradient()
+    if not gradient then return end  -- silently bail if model isn't there yet
+
+    if custom_gradient_enabled then
+        gradient.Color = ColorSequence.new({
+            ColorSequenceKeypoint.new(0,   gradient_color1),
+            ColorSequenceKeypoint.new(0.5, gradient_color2),
+            ColorSequenceKeypoint.new(1,   gradient_color3),
+        })
+    else
+        gradient.Color = ColorSequence.new({
+            ColorSequenceKeypoint.new(0,   gradient_default1),
+            ColorSequenceKeypoint.new(0.5, gradient_default2),
+            ColorSequenceKeypoint.new(1,   gradient_default3),
+        })
+    end
+end
+
+-- Background loop: waits for the model to appear then applies the gradient
+task.spawn(function()
+    while true do
+        task.wait(0.5)
+
+        if not custom_gradient_enabled then continue end
+
+        local gradient = getGradient()
+        if not gradient then
+            repeat
+                task.wait(0.5)
+                gradient = getGradient()
+            until gradient or not custom_gradient_enabled
+
+            if not custom_gradient_enabled then continue end
+        end
+
+        applyGradient()
+    end
+end)
 
 ESP:AddToggle('ESP_Enable', {
     Text = 'Enable',
@@ -1935,6 +2010,41 @@ ESP:AddToggle('ESP_Progress', {
     Callback = function(Value)
         ESP_CONFIG.ColorTable.Full = Value
         UpdateAllHorseVisuals()
+    end
+})
+
+ESP:AddToggle('RadiusModel', {
+    Text = 'Radius Model',
+    Default = false,
+    Tooltip = 'Enables radius model',
+
+    Callback = function(Value)
+        custom_gradient_enabled = Value
+        applyGradient()  -- safe, won't error if model is missing
+    end
+}):AddColorPicker('ESP_Progress_Color1', {
+    Default = Color3.new(0.341, 0.345, 0.471),
+    Title = 'Empty',
+    Transparency = 0,
+    Callback = function(Value)
+        gradient_color1 = Value
+        applyGradient()
+    end
+}):AddColorPicker('ESP_Progress_Color2', {
+    Default = Color3.new(0.290, 0.294, 0.459),
+    Title = 'Half',
+    Transparency = 0,
+    Callback = function(Value)
+        gradient_color2 = Value
+        applyGradient()
+    end
+}):AddColorPicker('ESP_Progress_Color3', {
+    Default = Color3.new(0.259, 0.263, 0.459),
+    Title = 'Full',
+    Transparency = 0,
+    Callback = function(Value)
+        gradient_color3 = Value
+        applyGradient()
     end
 })
 
