@@ -474,9 +474,9 @@ local function getNearestHorse(root, island)
     local nearest  = nil
     local shortest = math.huge
 
+    -- If wildherd_capture is enabled, first scan workspace for wild herd horses
+    -- Wild herd horses take priority over regular horses
     if wildherd_capture then
-        -- Wild herd mode: horses are direct children of workspace,
-        -- identified by having a HumanoidRootPart, no folder parent.
         for _, obj in ipairs(workspace:GetChildren()) do
             if obj:IsA("Model") then
                 local horseRoot = obj:FindFirstChild("HumanoidRootPart")
@@ -489,19 +489,25 @@ local function getNearestHorse(root, island)
                 end
             end
         end
-    else
-        -- Default mode: horses are inside the island, identified by CaptureProgress GUI.
-        for _, obj in ipairs(island:GetDescendants()) do
-            if obj:IsA("Model") then
-                local horseRoot  = obj:FindFirstChild("HumanoidRootPart")
-                local captureGui = obj:FindFirstChild("CaptureProgress", true)
 
-                if horseRoot and captureGui then
-                    local dist = (root.Position - horseRoot.Position).Magnitude
-                    if dist < shortest then
-                        shortest = dist
-                        nearest  = horseRoot
-                    end
+        -- If a wild herd horse was found, return it immediately (priority)
+        if nearest then
+            return nearest
+        end
+    end
+
+    -- Fall through to regular horses (CaptureProgress) either when:
+    -- wildherd_capture is off, or no wild herd horses were found
+    for _, obj in ipairs(island:GetDescendants()) do
+        if obj:IsA("Model") then
+            local horseRoot  = obj:FindFirstChild("HumanoidRootPart")
+            local captureGui = obj:FindFirstChild("CaptureProgress", true)
+
+            if horseRoot and captureGui then
+                local dist = (root.Position - horseRoot.Position).Magnitude
+                if dist < shortest then
+                    shortest = dist
+                    nearest  = horseRoot
                 end
             end
         end
@@ -509,6 +515,7 @@ local function getNearestHorse(root, island)
 
     return nearest
 end
+
 
 local function getNextFarmIsland(currentIslandName)
     local enabled = {}
