@@ -952,6 +952,7 @@ local Window = Library:CreateWindow({
 Title = '                       perc<font color="#898aae">.hook</font> // ##B4RR          <font color="#898aae">.gg/UkPDe8hF4p</font>',
     Center = true,
     AutoShow = true,
+    Footer = "perc.hook //  discord.gg/UkPDe8hF4p",
     TabPadding = 2,
     MenuFadeTime = 0.1
 })
@@ -1138,18 +1139,17 @@ local function shouldLockHorse(itemData)
     local variants = itemData.variants
     if not variants then return false end
 
-    -- ── 1. Check coat colour ──────────────────────────────────────────
+    -- ── 1. Coat colour ──────────────────────────────────────────────
     if variants.colour then
         local coatEntry = HorseVariants.colour[variants.colour]
         if coatEntry then
             local indicator = coatEntry.specialItemIndicator
-
-            if indicator and LOCK_INDICATORS[indicator] then
+            if indicator and LOCK_INDICATORS[indicator] == true then
                 warn("[AutoSell] LOCK - coat indicator:", indicator)
                 return true
             end
 
-            if LOCK_INDICATORS["rareCoat"]
+            if LOCK_INDICATORS["rareCoat"] == true
                 and (coatEntry.rarityFloat or 0) >= RARE_THRESHOLD
             then
                 warn("[AutoSell] LOCK - rare coat, rarityFloat:", coatEntry.rarityFloat)
@@ -1158,30 +1158,28 @@ local function shouldLockHorse(itemData)
         end
     end
 
-    -- ── 2. Check mane & tail colour via indicator ─────────────────────
-    for _, key in {"maneColour", "tailColour"} do
+    -- ── 2 & 3. Mane & tail colour ───────────────────────────────────
+    for _, key in ipairs({"maneColour", "tailColour"}) do
         local val = variants[key]
         if val then
             local hairEntry = HorseVariants.maneAndTailColour[val]
             if hairEntry then
                 local indicator = hairEntry.specialItemIndicator
-                if indicator and LOCK_INDICATORS[indicator] then
+                if indicator and LOCK_INDICATORS[indicator] == true then
                     warn("[AutoSell] LOCK - hair indicator:", indicator, "from", key)
                     return true
                 end
             end
 
-            -- ── 3. Direct island unique hair colour key check ─────────
-            -- Fallback in case indicator lookup fails
-            if LOCK_INDICATORS["islandUniqueHairColour"] and ISLAND_UNIQUE_HAIR[val] then
+            if LOCK_INDICATORS["islandUniqueHairColour"] == true and ISLAND_UNIQUE_HAIR[val] == true then
                 warn("[AutoSell] LOCK - direct island unique hair match:", val, "from", key)
                 return true
             end
         end
     end
 
-    -- ── 4. Check mismatch (mane colour ≠ tail colour) ────────────────
-    if LOCK_INDICATORS["mismatchHairColour"] then
+    -- ── 4. Mismatch mane ≠ tail ─────────────────────────────────────
+    if LOCK_INDICATORS["mismatchHairColour"] == true then
         local mane = itemData.maneColourOg or variants.maneColour
         local tail = itemData.tailColourOg or variants.tailColour
         if mane and tail and mane ~= tail then
@@ -1190,14 +1188,16 @@ local function shouldLockHorse(itemData)
         end
     end
 
-    -- ── 5. Check naturally dyed ───────────────────────────────────────
-    if LOCK_INDICATORS["naturallyDyedHairColour"] and itemData.isNatDyed then
+    -- ── 5. Naturally dyed ────────────────────────────────────────────
+    if LOCK_INDICATORS["naturallyDyedHairColour"] == true and itemData.isNatDyed == true then
         warn("[AutoSell] LOCK - naturally dyed")
         return true
     end
 
-    -- ── 6. Check item's own top-level specialItemIndicator ───────────
-    if itemData.specialItemIndicator and LOCK_INDICATORS[itemData.specialItemIndicator] then
+    -- ── 6. Top-level item indicator ──────────────────────────────────
+    if itemData.specialItemIndicator
+        and LOCK_INDICATORS[itemData.specialItemIndicator] == true
+    then
         warn("[AutoSell] LOCK - item indicator:", itemData.specialItemIndicator)
         return true
     end
@@ -1463,6 +1463,7 @@ local RANDOM_TP_ENABLED = false
 local CLICK_COOLDOWN    = 0.05
 local IDLE_THRESHOLD    = 5
 local isMining          = false
+local justTeleported    = false
 
 local TARGET_ITEMS = {
     ["Rock"]              = false,
@@ -1529,20 +1530,27 @@ local function aimCameraAt(targetPos)
 end
 
 local function clickOnTarget(targetPart)
+    local originalCFrame = camera.CFrame
     camera.CFrame = CFrame.new(camera.CFrame.Position, targetPart.Position)
 
     local x, y, onScreen = worldToScreen(targetPart.Position)
     if not onScreen then
-        local vp = camera.ViewportSize
-        x, y = vp.X / 2, vp.Y / 2
+        camera.CFrame = originalCFrame
+        return false
     end
 
-    pcall(function()
+    local success = pcall(function()
         VIM:SendMouseMoveEvent(x, y, game)
         VIM:SendMouseButtonEvent(x, y, 0, true,  game, 1)
-        task.wait(0.02)
+        task.wait(0.05)
         VIM:SendMouseButtonEvent(x, y, 0, false, game, 1)
     end)
+
+    task.defer(function()
+        camera.CFrame = originalCFrame
+    end)
+
+    return success
 end
 
 local function getNearestOre(island)
@@ -1649,6 +1657,7 @@ task.spawn(function()
             followConnection = nil
         end
 
+        justTeleported = true
         aimCameraAt(targetPart.Position)
 
         -- Wait before locking onto Erupted Deposit
@@ -1674,15 +1683,49 @@ task.spawn(function()
             end
 
             root.CFrame = CFrame.new(targetPart.Position + hoverOffset, targetPart.Position)
-            root.AssemblyLinearVelocity = Vector3.zero
+            root.AssemblyLinearVelocity  = Vector3.zero
             root.AssemblyAngularVelocity = Vector3.zero
         end)
 
         -- Click loop while ore is alive
+        local lastHealth           = ore:GetAttribute(HEALTH_ATTR)
+        local lastHealthChangeTime = tick()
+
         while AUTOFARM and ore.Parent and (ore:GetAttribute(HEALTH_ATTR) or 0) > 0 and TARGET_ITEMS[ore:GetAttribute(ATTR_NAME)] == true do
             camera.CFrame = CFrame.new(camera.CFrame.Position, targetPart.Position)
             clickOnTarget(targetPart)
-            task.wait(CLICK_COOLDOWN)
+
+            -- Bypass cooldown on first click after moving to a new ore
+            if justTeleported then
+                justTeleported = false
+                lastHealth           = ore:GetAttribute(HEALTH_ATTR)
+                lastHealthChangeTime = tick()
+                task.wait(0.1)
+            else
+                -- Wait and watch for health to drop for up to 5 seconds
+                local clickSent    = tick()
+                local healthDropped = false
+
+                while tick() - clickSent < 5 do
+                    task.wait(0.05)
+
+                    if not ore.Parent or (ore:GetAttribute(HEALTH_ATTR) or 0) <= 0 then
+                        break
+                    end
+
+                    local currentHealth = ore:GetAttribute(HEALTH_ATTR)
+                    if currentHealth ~= lastHealth then
+                        lastHealth      = currentHealth
+                        healthDropped   = true
+                        break
+                    end
+                end
+
+                -- Optional minimum delay between clicks (controlled by slider)
+                if CLICK_COOLDOWN > 0 then
+                    task.wait(CLICK_COOLDOWN)
+                end
+            end
         end
 
         -- Cleanup after ore dies
@@ -1836,6 +1879,19 @@ Ores:AddSlider('Idle_Limit', {
 
     Callback = function(Value)
         IDLE_THRESHOLD = Value
+    end
+})
+
+Ores:AddSlider('Click_Time', {
+    Text     = 'Click Time',
+    Default  = 0,
+    Min      = 0,
+    Max      = 1000,
+    Rounding = 1,
+    Compact  = false,
+
+    Callback = function(Value)
+        CLICK_COOLDOWN = Value / 1000  -- convert ms to seconds
     end
 })
 
