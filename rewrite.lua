@@ -982,6 +982,7 @@ task.delay(0.5, EnableRichText)
 local Tabs = {
     Main = Window:AddTab('Autofarm'),
     Visuals = Window:AddTab('Visuals'),
+    Crafting = Window:AddTab('Crafting'),
     Misc = Window:AddTab('Misc'),
     ['UI Settings'] = Window:AddTab('UI Settings'),
 }
@@ -2388,6 +2389,161 @@ CharacterVisuals:AddSlider('AnimSpeed', {
     end
 })
 
+local BuyingMaterials = Tabs.Crafting:AddLeftGroupbox('Resources')
+
+local Events = game:GetService("ReplicatedStorage"):WaitForChild("Communication"):WaitForChild("Events")
+
+local oreAmount = 10
+
+local oreList = {
+    ["Rope"] = {"Mainland Shop", 1},
+    ["Copper"] = {"Blizzard Island Shop", 8},
+    ["Bronze"] = {"Blizzard Island Shop", 9},
+    ["Iron"] = {"Forest Island Shop", 8},
+    ["Clear Quartz"] = {"Royal Island Shop", 7},
+    ["Gold"] = {"Desert Island Shop", 8},
+    ["Ruby"] = {"Desert Island Shop", 9},
+    ["Ice Shard"] = {"Glacier Island Shop", 6},
+    ["Diamond"] = {"Mountain Island Shop", 8},
+    ["Sapphire"] = {"Mountain Island Shop", 9},
+    ["Topaz"] = {"Jungle Island Shop", 9},
+    ["Emerald"] = {"Jungle Island Shop", 10},
+    ["Amethyst"] = {"Jungle Island Shop", 11},
+    ["Obsidian"] = {"Lunar Islands Shop", 8},
+    ["Moonstone"] = {"Lunar Islands Shop", 9},
+    ["Prismatic"] = {"Volcano Island Shop", 7},
+}
+
+local selectedOre = "Rope"
+
+BuyingMaterials:AddDropdown('OreSelector', {
+    Values = {
+        "Rope", "Copper", "Bronze", "Iron", "Clear Quartz",
+        "Gold", "Ruby", "Ice Shard", "Diamond", "Sapphire",
+        "Topaz", "Emerald", "Amethyst", "Obsidian", "Moonstone", "Prismatic"
+    },
+    Default = 1, -- Obsidian is index 14
+    Title = 'Select Ore',
+    Callback = function(Value)
+        selectedOre = Value
+    end
+})
+
+BuyingMaterials:AddSlider("Ore Amount", {
+    Text = "Ore Amount",
+    Default = 10,
+    Min = 1,
+    Max = 1000,
+    Rounding = 1,
+    Callback = function(Value)
+        oreAmount = Value
+    end,
+    Tooltip = "Amount of ore to buy",
+    DisabledTooltip = "",
+    Disabled = false,
+    Visible = true,
+})
+
+BuyingMaterials:AddButton({
+    Text = "Buy Ore",
+    Func = function()
+        local ore = oreList[selectedOre]
+        if not ore then
+            warn("Invalid ore selected")
+            return
+        end
+        local shop = ore[1]
+        local index = ore[2]
+        for _, remote in Events:GetChildren() do
+            pcall(function()
+                remote:FireServer("BuyShopItem", shop, index, oreAmount)
+            end)
+        end
+    end,
+    DoubleClick = false,
+    Tooltip = "Buys selected ore",
+    DisabledTooltip = "",
+    Disabled = false,
+    Visible = true,
+    Risky = true,
+})
+
+local CraftingMaterials = Tabs.Crafting:AddRightGroupbox('Crafting')
+
+local craftAmount = 10
+
+local lassoList = {
+    ["Wooden Lasso"] = 17,
+    ["Tin Lasso"] = 18,
+    ["Copper Lasso"] = 19,
+    ["Bronze Lasso"] = 20,
+    ["Iron Lasso"] = 21,
+    ["Silver Lasso"] = 22,
+    ["Gold Lasso"] = 23,
+    ["Ruby Lasso"] = 24,
+    ["Diamond Lasso"] = 25,
+    ["Sapphire Lasso"] = 26,
+    ["Topaz Lasso"] = 27,
+    ["Emerald Lasso"] = 28,
+    ["Amethyst Lasso"] = 29,
+    ["Obsidian Lasso"] = 30,
+    ["Moonstone Lasso"] = 31,
+    ["Ice Lasso"] = 1243,
+}
+
+local selectedLasso = "Wooden Lasso"
+
+CraftingMaterials:AddDropdown('LassoSelector', {
+    Values = {
+        "Wooden Lasso", "Tin Lasso", "Copper Lasso", "Bronze Lasso",
+        "Iron Lasso", "Silver Lasso", "Gold Lasso", "Ruby Lasso",
+        "Diamond Lasso", "Sapphire Lasso", "Topaz Lasso", "Emerald Lasso",
+        "Amethyst Lasso", "Obsidian Lasso", "Moonstone Lasso", "Ice Lasso"
+    },
+    Default = 1,
+    Title = 'Select Lasso',
+    Callback = function(Value)
+        selectedLasso = Value
+    end
+})
+
+CraftingMaterials:AddSlider("Craft Amount", {
+    Text = "Craft Amount",
+    Default = 10,
+    Min = 1,
+    Max = 1000,
+    Rounding = 1,
+    Callback = function(Value)
+        craftAmount = Value
+    end,
+    Tooltip = "Amount of lassos to craft",
+    Disabled = false,
+    Visible = true,
+})
+
+CraftingMaterials:AddButton({
+    Text = "Craft Lasso",
+    Func = function()
+        local id = lassoList[selectedLasso]
+        if not id then
+            warn("Invalid lasso selected")
+            return
+        end
+        local m_References = require(game:GetService("ReplicatedStorage"):WaitForChild("References"))
+        local Utilities = m_References.Utilities
+        Utilities.Network:FireServer("Crafting", "Craft", {
+            id = id,
+            variants = {},
+            amt = craftAmount
+        })
+    end,
+    DoubleClick = false,
+    Tooltip = "Crafts selected lasso",
+    Disabled = false,
+    Visible = true,
+    Risky = true,
+})
+
 -- ============================================================
 --  CHARACTER MODIFIERS
 -- ============================================================
@@ -2938,17 +3094,6 @@ MenuGroup:AddDropdown("DPIDropdown", {
 
 		Library:SetDPIScale(DPI)
 	end,
-})
-
-MenuGroup:AddSlider('BlurValue', {
-    Text = 'Blur Strength',
-    Default = 20,
-    Min = 1,
-    Max = 56,
-    Rounding = 1,
-    Callback = function(Value)
-        MenuBlur.Size = Value
-    end
 })
 
 MenuGroup:AddSlider("UICornerSlider", {
