@@ -1494,6 +1494,29 @@ local TARGET_ITEMS = {
     ["Erupted Deposit"]   = false,
 }
 
+local oreValues = {
+    "Rock",
+    "Tin Rock",
+    "Copper Rock",
+    "Bronze Rock",
+    "Iron Rock",
+    "Silver Rock",
+    "Gold Rock",
+    "Frozen Crystal",
+    "Random Rock",
+    "Clear Quartz Crystal",
+    "Archaeological Deposit",
+    "Diamond Rock",
+    "Sapphire Rock",
+    "Topaz Rock",
+    "Amethyst Rock",
+    "Emerald Rock",
+    "Obsidian Rock",
+    "Moonstone Rock",
+    "Prismatic Crystal",
+    "Erupted Deposit",
+}
+
 local ATTR_NAME   = "itemName"
 local HEALTH_ATTR = "health"
 
@@ -1863,7 +1886,7 @@ Ores:AddToggle('OreRandomTeleport', {
 })
 
 Ores:AddDropdown('OreType', {
-    Values  = { 'Rock', 'Tin Rock', 'Copper Rock', 'Bronze Rock', 'Iron Rock', 'Silver Rock', 'Gold Rock', 'Diamond Rock', 'Sapphire Rock', 'Topaz Rock', 'Amethyst Rock', 'Emerald Rock', 'Obsidian Rock', 'Moonstone Rock', 'Prismatic Crystal', 'Erupted Deposit' },
+    Values  = oreValues,
     Default = 0,
     Multi   = true,
     Text    = 'Ore type',
@@ -2600,7 +2623,14 @@ local Button = Redeeming:AddButton({
     Tooltip = 'Executes dex'
 })
 
-
+local Button = Redeeming:AddButton({
+    Text = 'Relics (1)',
+    Func = function()
+        invokeServer("Trade", "archaeology")
+    end,
+    DoubleClick = false,
+    Tooltip = 'Executes dex'
+})
 
 -- ============================================================
 --  CHARACTER MODIFIERS
