@@ -1479,8 +1479,10 @@ local TARGET_ITEMS = {
     ["Iron Rock"]         = false,
     ["Silver Rock"]       = false,
     ["Gold Rock"]         = false,
+    ["Frozen Crystal"]    = false,
     ["Random Rock"]       = false,
     ["Clear Quartz Crystal"] = false,
+    ["Archaeological Deposit"] = false,
     ["Diamond Rock"]      = false,
     ["Sapphire Rock"]     = false,
     ["Topaz Rock"]        = false,
@@ -2543,6 +2545,62 @@ CraftingMaterials:AddButton({
     Visible = true,
     Risky = true,
 })
+
+local Redeeming = Tabs.Crafting:AddLeftGroupbox('Redeem')
+
+local Functions = game:GetService("ReplicatedStorage"):WaitForChild("Communication"):WaitForChild("Functions")
+
+local Button = Redeeming:AddButton({
+    Text = 'Volcanic Mineral (5)',
+    Func = function()
+        for _, remote in Functions:GetChildren() do
+            pcall(function()
+                remote:FireServer("\002", "Trade", "volcanicMinerals")
+            end)
+        end
+    end,
+    DoubleClick = false,
+    Tooltip = 'Executes dex'
+})
+
+local counter = 0
+
+local function toByteString(n)
+    if n <= 255 then
+        return string.char(n)
+    end
+    return string.char(math.floor(n / 256), n % 256)
+end
+
+local function invokeServer(action, tradeType)
+    local prefix = toByteString(counter)
+    counter = (counter + 1) % 4294967296
+    for _, remote in Functions:GetChildren() do
+        pcall(function()
+            remote:FireServer(prefix, action, tradeType)
+        end)
+    end
+end
+
+local Button = Redeeming:AddButton({
+    Text = 'Training Receipt (100)',
+    Func = function()
+        invokeServer("Trade", "trainingReceipts")
+    end,
+    DoubleClick = false,
+    Tooltip = 'Executes dex'
+})
+
+local Button = Redeeming:AddButton({
+    Text = 'Golden Apples (20)',
+    Func = function()
+        invokeServer("Trade", "goldenAppleBasket")
+    end,
+    DoubleClick = false,
+    Tooltip = 'Executes dex'
+})
+
+
 
 -- ============================================================
 --  CHARACTER MODIFIERS
