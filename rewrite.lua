@@ -2434,7 +2434,7 @@ BuyingMaterials:AddSlider("Ore Amount", {
     Default = 10,
     Min = 1,
     Max = 1000,
-    Rounding = 1,
+    Rounding = 0,
     Callback = function(Value)
         oreAmount = Value
     end,
@@ -2512,7 +2512,7 @@ CraftingMaterials:AddSlider("Craft Amount", {
     Default = 10,
     Min = 1,
     Max = 1000,
-    Rounding = 1,
+    Rounding = 0,
     Callback = function(Value)
         craftAmount = Value
     end,
