@@ -1055,7 +1055,7 @@ LeftGroupBox:AddToggle('AutoLasso_Enable', {
 })
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local HorseVariants     = require(ReplicatedStorage.References.HorseVariants)
+local HorseVariants = require(ReplicatedStorage.References.HorseVariants)
 local SpecialItemIndicators = require(ReplicatedStorage.References.SpecialItemIndicators)
 
 -- ─────────────────────────────────────────────
@@ -1083,6 +1083,7 @@ local RARE_THRESHOLD = 0.975
 
 -- ─────────────────────────────────────────────
 -- Direct island unique hair colour key lookup
+-- (matches the keys used in HorseVariants.maneAndTailColour)
 -- ─────────────────────────────────────────────
 
 local ISLAND_UNIQUE_HAIR = {
@@ -1228,39 +1229,11 @@ for _, Value in Modules do
 end
 
 -- ─────────────────────────────────────────────
--- Autosell
+-- Autosell toggle
 -- ─────────────────────────────────────────────
 
 local autosell_enabled = false
-local bindConnection   = nil
-
--- Tracks pending task.delay threads so we can cancel them on disable/cleanup.
--- WeakKeys mean a thread that finishes naturally is GC'd automatically
--- without us needing to remove it manually.
-local pendingThreads = setmetatable({}, { __mode = "k" })
-
-local function cancelPendingThreads()
-    for thread in pairs(pendingThreads) do
-        task.cancel(thread)
-    end
-    -- Clear the table so the dead references are released immediately
-    -- rather than waiting for the next GC cycle.
-    pendingThreads = setmetatable({}, { __mode = "k" })
-end
-
-local function cleanup()
-    autosell_enabled = false
-    cancelPendingThreads()
-
-    if bindConnection and InventoryHandler then
-        InventoryHandler.Unbind(bindConnection)
-        bindConnection = nil
-    end
-end
-
--- Automatically clean up if the script is destroyed (e.g. executor reset).
--- `game` is always valid, so this reliably fires on teardown.
-game:BindToClose(cleanup)
+local bindConnection = nil
 
 local function toggleAutosell(state)
     autosell_enabled = (state ~= nil) and state or (not autosell_enabled)
@@ -1290,11 +1263,7 @@ local function toggleAutosell(state)
                 warn("shouldLock:", shouldLockHorse(itemData))
                 warn("=======================")
 
-                -- Spawn the delayed action and register the thread so it can
-                -- be cancelled if autosell is disabled before it fires.
-                local thread
-                thread = task.delay(ACTION_DELAY, function()
-                    pendingThreads[thread] = nil  -- Resolved cleanly; deregister.
+                task.delay(ACTION_DELAY, function()
                     if not autosell_enabled then return end
 
                     if shouldLockHorse(itemData) then
@@ -1305,13 +1274,9 @@ local function toggleAutosell(state)
                         Network:FireServer("Shopping", "QuickSellItem", guid)
                     end
                 end)
-                pendingThreads[thread] = true  -- Register after creation.
             end)
         end
     else
-        -- Disabling: cancel in-flight delays and unbind the listener.
-        cancelPendingThreads()
-
         if bindConnection then
             InventoryHandler.Unbind(bindConnection)
             bindConnection = nil
