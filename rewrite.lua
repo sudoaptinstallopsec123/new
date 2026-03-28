@@ -724,205 +724,541 @@ task.spawn(function()
     end
 end)
 
-local runService = game:GetService("RunService")
-local players = game:GetService("Players")
-local workspace = game:GetService("Workspace")
-local camera = workspace.CurrentCamera
+local runService   = game:GetService("RunService")
+local players      = game:GetService("Players")
+local workspace    = game:GetService("Workspace")
+local camera       = workspace.CurrentCamera
 local TweenService = game:GetService("TweenService")
 
+-- ════════════════════════════════════════════════════════════════════════════
+--  CONFIG
+--  BoxStyle: "Corner"  = corner-bracket box (professional look)
+--            "Full"    = classic full-rectangle box
+-- ════════════════════════════════════════════════════════════════════════════
 local ESP_CONFIG = {
-    Enabled = false,
-    ShowBoxes = false,
-    ShowNames = false,
-    ShowChams = false,
-    ShowHealth = false,
-    BoxColor = Color3.fromRGB(77, 78, 117),
-    NameColor = Color3.fromRGB(81, 82, 124), ChamColor = Color3.fromRGB(136, 137, 173),
-    ColorTable = { 
-    Empty = Color3.fromRGB(86, 87, 120),
-    Half = Color3.fromRGB(73, 74, 117),
-    Full = Color3.fromRGB(66, 67, 117) 
+    Enabled     = false,
+    ShowBoxes   = false,
+    ShowNames   = false,
+    ShowChams   = false,
+    ShowHealth  = false,
+
+    BoxStyle    = "Full",   -- "Corner" | "Full"
+
+    BoxColor    = Color3.fromRGB(77,  78,  117),
+    NameColor   = Color3.fromRGB(255, 255, 255),
+    DistColor   = Color3.fromRGB(255, 215, 60),
+    ChamColor   = Color3.fromRGB(136, 137, 173),
+
+    ColorTable  = {
+        Empty = Color3.fromRGB(210, 50,  50),
+        Half  = Color3.fromRGB(220, 180, 40),
+        Full  = Color3.fromRGB(80,  200, 90),
     },
-    BoxTransparency = 1, ChamTransparency = 0.5, TextSize = 14, MaxDistance = 2500,
-    AnimateChams = false,
-    AnimationStyle = "Pulse",
-    AnimSpeed = 2
+
+    ChamTransparency  = 0.5,
+    TextSize          = 13,
+    MaxDistance       = 2500,
+
+    AnimateChams      = false,
+    AnimationStyle    = "Pulse",
+    AnimSpeed         = 2,
+
+    -- Health bar smoothing: higher = snappier, lower = smoother (dt-based)
+    HealthLerpSpeed   = 6,
 }
 
-local function createOutlined(class)
-    local out = Drawing.new(class)
-    
-    -- Only set Thickness if it's a Line or Square
-    if class == "Line" or class == "Square" then
-        out.Thickness = 3
-    end
-    
-    out.Color = Color3.new(0, 0, 0)
-    out.Visible = false
-    
-    local main = Drawing.new(class)
-    
-    if class == "Line" or class == "Square" then
-        main.Thickness = 1
-    end
-    
-    main.Color = Color3.new(1, 1, 1)
-    main.Visible = false
-    
-    return main, out
+-- ════════════════════════════════════════════════════════════════════════════
+--  LOW-LEVEL DRAWING HELPERS
+-- ════════════════════════════════════════════════════════════════════════════
+
+-- Text with built-in black outline (no second drawing needed)
+local function newText()
+    local t   = Drawing.new("Text")
+    t.Font    = Drawing.Fonts.UI
+    t.Outline = true        -- 1 px black outline baked in
+    t.Center  = true
+    t.Visible = false
+    return t
 end
 
-local HorseObject = {}; HorseObject.__index = HorseObject;
+-- Outlined line pair  (shadow + main)
+-- Shadow is only 1px wider than main so corners stay clean with no blob.
+local function newLinePair()
+    local shadow     = Drawing.new("Line")
+    shadow.Color     = Color3.new(0, 0, 0)
+    shadow.Thickness = 2
+    shadow.Visible   = false
+
+    local main       = Drawing.new("Line")
+    main.Color       = Color3.new(1, 1, 1)
+    main.Thickness   = 1
+    main.Visible     = false
+
+    return main, shadow
+end
+
+-- Outlined square pair  (shadow + main)
+local function newSquarePair(filled)
+    local shadow      = Drawing.new("Square")
+    shadow.Color      = Color3.new(0, 0, 0)
+    shadow.Thickness  = 3
+    shadow.Filled     = filled or false
+    shadow.Visible    = false
+
+    local main        = Drawing.new("Square")
+    main.Color        = Color3.new(1, 1, 1)
+    main.Thickness    = 1
+    main.Filled       = filled or false
+    main.Visible      = false
+
+    return main, shadow
+end
+
+-- ════════════════════════════════════════════════════════════════════════════
+--  CORNER BRACKET BOX
+-- ════════════════════════════════════════════════════════════════════════════
+
+local function createCornerBrackets()
+    local b = {}
+    for i = 1, 8 do
+        -- Each arm: one black outline line (drawn first, slightly thicker)
+        -- and one coloured main line drawn on top.
+        local outline = Drawing.new("Line")
+        outline.Color     = Color3.new(0, 0, 0)
+        outline.Thickness = 3
+        outline.Visible   = false
+
+        local main = Drawing.new("Line")
+        main.Color     = Color3.new(1, 1, 1)
+        main.Thickness = 1
+        main.Visible   = false
+
+        b[i] = { main = main, outline = outline }
+    end
+    return b
+end
+
+local function setCornerBrackets(b, pos, sz, visible, color)
+    local x, y = pos.X, pos.Y
+    local w, h = sz.X,  sz.Y
+    local cw   = math.clamp(w * 0.22, 6, 20)
+    local ch   = math.clamp(h * 0.22, 6, 20)
+
+    -- { ox, oy,  hEndX, hEndY,  vEndX, vEndY }
+    local defs = {
+        { x,   y,   x+cw,   y,     x,   y+ch   },  -- TL
+        { x+w, y,   x+w-cw, y,     x+w, y+ch   },  -- TR
+        { x,   y+h, x+cw,   y+h,   x,   y+h-ch },  -- BL
+        { x+w, y+h, x+w-cw, y+h,   x+w, y+h-ch },  -- BR
+    }
+
+    for ci, c in ipairs(defs) do
+        local hi = (ci - 1) * 2 + 1
+        local vi = hi + 1
+
+        local from = Vector2.new(c[1], c[2])
+
+        -- Outline drawn first (thicker, black), main on top (thinner, coloured).
+        -- Both use identical coords — the thickness difference creates the outline.
+        local hPair = b[hi]
+        local hTo   = Vector2.new(c[3], c[4])
+        hPair.outline.From    = from;  hPair.outline.To    = hTo
+        hPair.main.From       = from;  hPair.main.To       = hTo
+        hPair.main.Color      = color
+        hPair.outline.Visible = visible
+        hPair.main.Visible    = visible
+
+        local vPair = b[vi]
+        local vTo   = Vector2.new(c[5], c[6])
+        vPair.outline.From    = from;  vPair.outline.To    = vTo
+        vPair.main.From       = from;  vPair.main.To       = vTo
+        vPair.main.Color      = color
+        vPair.outline.Visible = visible
+        vPair.main.Visible    = visible
+    end
+end
+
+local function hideCornerBrackets(b)
+    for _, pair in ipairs(b) do
+        pair.main.Visible    = false
+        pair.outline.Visible = false
+    end
+end
+
+local function removeCornerBrackets(b)
+    for _, pair in ipairs(b) do
+        pair.main:Remove()
+        pair.outline:Remove()
+    end
+end
+
+-- ════════════════════════════════════════════════════════════════════════════
+--  FULL RECTANGLE BOX
+-- ════════════════════════════════════════════════════════════════════════════
+
+local function createFullBox()
+    local main, shadow = newSquarePair(false)
+    return { main = main, shadow = shadow }
+end
+
+local function setFullBox(fb, pos, sz, visible, color)
+    fb.shadow.Position = pos
+    fb.shadow.Size     = sz
+    fb.main.Position   = pos
+    fb.main.Size       = sz
+    fb.main.Color      = color
+    fb.main.Visible    = visible
+    fb.shadow.Visible  = visible
+end
+
+local function hideFullBox(fb)
+    fb.main.Visible   = false
+    fb.shadow.Visible = false
+end
+
+local function removeFullBox(fb)
+    fb.main:Remove()
+    fb.shadow:Remove()
+end
+
+-- ════════════════════════════════════════════════════════════════════════════
+--  HEALTH BAR  –  horizontal, sitting just above the bounding box top edge
+--  Layout:  [ ■■■■■■■■░░░░ ]   (fill left→right, colour shifts red→green)
+-- ════════════════════════════════════════════════════════════════════════════
+local BAR_H   = 3   -- bar height in pixels
+local BAR_GAP = 4   -- pixels between top of box and bottom of bar
+
+local function createHealthBar()
+    local bg        = Drawing.new("Square")
+    bg.Filled       = true
+    bg.Color        = Color3.fromRGB(15, 15, 15)
+    bg.Transparency = 0.35
+    bg.Visible      = false
+
+    local border      = Drawing.new("Square")
+    border.Filled     = false
+    border.Color      = Color3.new(0, 0, 0)
+    border.Thickness  = 1
+    border.Visible    = false
+
+    local fill    = Drawing.new("Square")
+    fill.Filled   = true
+    fill.Color    = Color3.fromRGB(80, 200, 90)
+    fill.Visible  = false
+
+    return { bg = bg, border = border, fill = fill }
+end
+
+local function updateHealthBar(bar, pos, sz, pct, visible)
+    local barY = pos.Y - BAR_GAP - BAR_H
+
+    bar.bg.Position = Vector2.new(pos.X, barY)
+    bar.bg.Size     = Vector2.new(sz.X, BAR_H)
+    bar.bg.Visible  = visible
+
+    bar.border.Position = Vector2.new(pos.X - 1, barY - 1)
+    bar.border.Size     = Vector2.new(sz.X + 2, BAR_H + 2)
+    bar.border.Visible  = visible
+
+    local fillW = math.max(1, sz.X * pct)
+    bar.fill.Position = Vector2.new(pos.X, barY)
+    bar.fill.Size     = Vector2.new(fillW, BAR_H)
+    bar.fill.Visible  = visible
+
+    local cfg = ESP_CONFIG.ColorTable
+    bar.fill.Color = pct < 0.5
+        and cfg.Empty:Lerp(cfg.Half, pct * 2)
+        or  cfg.Half:Lerp(cfg.Full, (pct - 0.5) * 2)
+end
+
+local function removeHealthBar(bar)
+    bar.bg:Remove()
+    bar.border:Remove()
+    bar.fill:Remove()
+end
+
+-- ════════════════════════════════════════════════════════════════════════════
+--  HORSEOBJECT
+-- ════════════════════════════════════════════════════════════════════════════
+local HorseObject = {}; HorseObject.__index = HorseObject
 
 function HorseObject.new(model)
-    local self = setmetatable({}, HorseObject);
-    self.model = model; self.lastUpdate = 0; self.currentPct = 0; self.targetPct = 0;
-    
-    self.box, self.boxOut = createOutlined("Square")
-    self.name, self.nameOut = createOutlined("Text")
-    
-    -- Apply Box and Name Colors from Config
-    self.box.Color = ESP_CONFIG.BoxColor
-    self.name.Color = ESP_CONFIG.NameColor
-    
-    local textSize = ESP_CONFIG.TextSize or 13
-    self.name.Size = textSize; self.nameOut.Size = textSize
-    self.name.Center = true; self.nameOut.Center = true
-    
-    self.health, self.healthOut = createOutlined("Square")
-    self.health.Filled = true; self.healthOut.Filled = true
-    
--- Option 2: Parent to the model itself
-self.highlight = Instance.new("Highlight")
-self.highlight.Parent = self.model
-
-    self.highlight.Adornee = model; 
-    self.highlight.Enabled = false;
-    -- Apply Cham Colors
-    self.highlight.FillColor = ESP_CONFIG.ChamColor
-    self.highlight.OutlineColor = ESP_CONFIG.ChamColor
-    self.highlight.FillTransparency = ESP_CONFIG.ChamTransparency or 0.5;
-    
+    local self        = setmetatable({}, HorseObject)
+    self.model        = model
+    self.currentPct   = 1   -- start full so bar doesn't flash from 0
+    self.targetPct    = 1
     self.currentTween = nil
-    self.renderConnection = runService.RenderStepped:Connect(function() self:Update(); end);
-    return self;
+
+    -- Both box styles (only one active at a time via BoxStyle config)
+    self.cornerBox = createCornerBrackets()
+    self.fullBox   = createFullBox()
+
+    -- Labels (built-in outline via t.Outline = true)
+    local ns        = ESP_CONFIG.TextSize or 13
+    self.name       = newText()
+    self.name.Size  = ns + 1
+    self.name.Color = ESP_CONFIG.NameColor
+
+    self.dist       = newText()
+    self.dist.Size  = ns - 1
+    self.dist.Color = ESP_CONFIG.DistColor
+
+    -- Health bar
+    self.healthBar = createHealthBar()
+
+    -- Chams
+    self.highlight                  = Instance.new("Highlight")
+    self.highlight.Parent           = model
+    self.highlight.Adornee          = model
+    self.highlight.Enabled          = false
+    self.highlight.FillColor        = ESP_CONFIG.ChamColor
+    self.highlight.OutlineColor     = ESP_CONFIG.ChamColor
+    self.highlight.FillTransparency = ESP_CONFIG.ChamTransparency or 0.5
+
+    -- RenderStepped passes dt so health lerp is framerate-independent
+    self.renderConnection = runService.RenderStepped:Connect(function(dt)
+        self:Update(dt)
+    end)
+
+    return self
 end
 
+-- ── Animations ──────────────────────────────────────────────────────────────
 function HorseObject:PlayAnim()
     if self.currentTween then self.currentTween:Cancel() end
-    -- Check config exists before accessing
-    if not ESP_CONFIG or not ESP_CONFIG.AnimateChams or not ESP_CONFIG.ShowChams then return end
-    
-    local info = TweenInfo.new(ESP_CONFIG.AnimSpeed or 1, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true)
+    if not ESP_CONFIG.AnimateChams or not ESP_CONFIG.ShowChams then return end
+
+    local info = TweenInfo.new(
+        ESP_CONFIG.AnimSpeed or 1,
+        Enum.EasingStyle.Sine,
+        Enum.EasingDirection.InOut,
+        -1, true)
     local style = ESP_CONFIG.AnimationStyle
     local color = ESP_CONFIG.ChamColor or Color3.new(1, 1, 1)
 
-    if style == "Pulse" then
-        self.currentTween = TweenService:Create(self.highlight, info, {FillTransparency = 0.9, OutlineTransparency = 0.9})
+    if     style == "Pulse"   then
+        self.currentTween = TweenService:Create(self.highlight, info,
+            { FillTransparency = 0.85, OutlineTransparency = 0.85 })
     elseif style == "Breathe" then
-        self.currentTween = TweenService:Create(self.highlight, info, {OutlineTransparency = 0.8})
-    elseif style == "Shift" then
-        self.currentTween = TweenService:Create(self.highlight, info, {FillColor = color, OutlineColor = color})
-    elseif style == "Flash" then
-        self.currentTween = TweenService:Create(self.highlight, info, {FillTransparency = 0})
+        self.currentTween = TweenService:Create(self.highlight, info,
+            { OutlineTransparency = 0.8 })
+    elseif style == "Shift"   then
+        self.currentTween = TweenService:Create(self.highlight, info,
+            { FillColor = color, OutlineColor = color })
+    elseif style == "Flash"   then
+        self.currentTween = TweenService:Create(self.highlight, info,
+            { FillTransparency = 0 })
     end
-    
+
     if self.currentTween then self.currentTween:Play() end
 end
 
-function HorseObject:Update()
-if tick() - self.lastUpdate < 0.03 then return end
-    self.lastUpdate = tick()
-
-    -- Safety check: model might have been destroyed
-    if not self.model or not self.model.Parent then return self:Destruct() end
-    local cf = self.model:GetPivot()
-    local size = self.model:GetExtentsSize()
-    local cf = self.model:GetPivot()
-    local size = self.model:GetExtentsSize()
-    local corners = { Vector3.new(size.X/2, size.Y/2, size.Z/2), Vector3.new(-size.X/2, size.Y/2, size.Z/2), Vector3.new(size.X/2, -size.Y/2, size.Z/2), Vector3.new(-size.X/2, -size.Y/2, size.Z/2), Vector3.new(size.X/2, size.Y/2, -size.Z/2), Vector3.new(-size.X/2, size.Y/2, -size.Z/2), Vector3.new(size.X/2, -size.Y/2, -size.Z/2), Vector3.new(-size.X/2, -size.Y/2, -size.Z/2) }
-
-    local minX, minY, maxX, maxY = math.huge, math.huge, -math.huge, -math.huge
-    for _, corner in pairs(corners) do
-        local screenPos, onScreen = camera:WorldToViewportPoint((cf * CFrame.new(corner)).Position)
-        if not onScreen then return self:SetVisible(false) end
-        minX, minY = math.min(minX, screenPos.X), math.min(minY, screenPos.Y)
-        maxX, maxY = math.max(maxX, screenPos.X), math.max(maxY, screenPos.Y)
+-- ── Per-frame update ────────────────────────────────────────────────────────
+function HorseObject:Update(dt)
+    if not self.model or not self.model.Parent then
+        return self:Destruct()
     end
 
-    local pos, size = Vector2.new(minX, minY), Vector2.new(maxX - minX, maxY - minY)
-    
-    self.box.Position = pos; self.boxOut.Position = pos; self.box.Size = size; self.boxOut.Size = size;
-    self.box.Visible = ESP_CONFIG.ShowBoxes; self.boxOut.Visible = ESP_CONFIG.ShowBoxes;
-    
-    self.name.Position = Vector2.new(pos.X + size.X/2, pos.Y - 25); self.nameOut.Position = self.name.Position;
-    self.name.Text = "[HORSE]"; self.nameOut.Text = "[HORSE]";
-    self.name.Visible = ESP_CONFIG.ShowNames; self.nameOut.Visible = ESP_CONFIG.ShowNames;
+    -- ── 3-D → screen bounding box ───────────────────────────────────────────
+    local cf   = self.model:GetPivot()
+    local size = self.model:GetExtentsSize()
+    local hx, hy, hz = size.X * 0.5, size.Y * 0.5, size.Z * 0.5
 
-    if ESP_CONFIG.ShowHealth then
-        for _, desc in pairs(self.model:GetDescendants()) do
-            if desc:IsA("TextLabel") and desc.Text:find("/") then
-                local c, g = desc.Text:match("(%d+)/(%d+)")
-                if c and g then self.targetPct = math.clamp(tonumber(c) / tonumber(g), 0, 1) end
+    -- Check the model center is in front of the camera (Z > 0 in view space).
+    -- We do NOT bail if individual corners are off-screen — at distance, corners
+    -- of the 3D box easily project outside the viewport even when the horse is
+    -- clearly visible. We clamp them instead.
+    local centerSp, centerOnScreen = camera:WorldToViewportPoint(cf.Position)
+    if not centerOnScreen then return self:SetVisible(false) end
+
+    local vp     = camera.ViewportSize
+    local minX, minY =  math.huge,  math.huge
+    local maxX, maxY = -math.huge, -math.huge
+
+    for _, sx in ipairs({ -hx, hx }) do
+        for _, sy in ipairs({ -hy, hy }) do
+            for _, sz2 in ipairs({ -hz, hz }) do
+                local sp = camera:WorldToViewportPoint(
+                    (cf * CFrame.new(sx, sy, sz2)).Position)
+                -- Clamp to viewport so off-screen corners don't explode the box
+                local cx = math.clamp(sp.X, 0, vp.X)
+                local cy = math.clamp(sp.Y, 0, vp.Y)
+                if cx < minX then minX = cx end
+                if cy < minY then minY = cy end
+                if cx > maxX then maxX = cx end
+                if cy > maxY then maxY = cy end
             end
         end
-        self.currentPct = self.currentPct + (self.targetPct - self.currentPct) * 0.1
-        self.healthOut.Position = Vector2.new(pos.X, pos.Y + size.Y + 5)
-        self.healthOut.Size = Vector2.new(size.X, 4)
-        self.health.Position = self.healthOut.Position
-        self.health.Size = Vector2.new(size.X * self.currentPct, 4)
-        self.health.Color = self.currentPct < 0.5 and ESP_CONFIG.ColorTable.Empty:Lerp(ESP_CONFIG.ColorTable.Half, self.currentPct * 2) or ESP_CONFIG.ColorTable.Half:Lerp(ESP_CONFIG.ColorTable.Full, (self.currentPct - 0.5) * 2)
-        self.health.Visible = true; self.healthOut.Visible = true
+    end
+
+    local bPos  = Vector2.new(minX, minY)
+    local bSize = Vector2.new(maxX - minX, maxY - minY)
+
+    -- ── Distance ────────────────────────────────────────────────────────────
+    local distVal = 0
+    local lp = players.LocalPlayer
+    if lp and lp.Character then
+        local root = lp.Character:FindFirstChild("HumanoidRootPart")
+        if root then
+            distVal = math.round((cf.Position - root.Position).Magnitude)
+        end
+    end
+
+    -- ── Box ─────────────────────────────────────────────────────────────────
+    if ESP_CONFIG.BoxStyle == "Corner" then
+        setCornerBrackets(self.cornerBox, bPos, bSize,
+            ESP_CONFIG.ShowBoxes, ESP_CONFIG.BoxColor)
+        hideFullBox(self.fullBox)
     else
-        self.health.Visible = false; self.healthOut.Visible = false
+        setFullBox(self.fullBox, bPos, bSize,
+            ESP_CONFIG.ShowBoxes, ESP_CONFIG.BoxColor)
+        hideCornerBrackets(self.cornerBox)
     end
-    
-    self.highlight.Enabled = ESP_CONFIG.ShowChams;
-    if ESP_CONFIG.AnimateChams and (not self.currentTween or self.currentTween.PlaybackState ~= Enum.PlaybackState.Playing) then
-        self:PlayAnim()
+
+    -- ── Labels ──────────────────────────────────────────────────────────────
+    local cx   = bPos.X + bSize.X * 0.5
+    local topY = bPos.Y - 28
+
+    self.name.Position = Vector2.new(cx, topY)
+    self.name.Text     = "Horse"
+    self.name.Visible  = ESP_CONFIG.ShowNames
+
+    self.dist.Position = Vector2.new(cx, topY + 15)
+    self.dist.Text     = distVal .. " m"
+    self.dist.Visible  = ESP_CONFIG.ShowNames
+
+    -- ── Health bar  (dt-based exponential lerp – no framerate dependence) ───
+    if ESP_CONFIG.ShowHealth then
+        for _, desc in pairs(self.model:GetDescendants()) do
+            if desc:IsA("TextLabel") then
+                local txt = desc.Text
+                if txt and txt:find("/") then
+                    local c, g = txt:match("(%d+)/(%d+)")
+                    if c and g then
+                        local gn = tonumber(g)
+                        if gn and gn > 0 then
+                            self.targetPct = math.clamp(tonumber(c) / gn, 0, 1)
+                        end
+                    end
+                end
+            end
+        end
+
+        -- 1 - e^(-speed * dt)  gives smooth, framerate-independent lerp
+        local speed = ESP_CONFIG.HealthLerpSpeed or 6
+        local alpha = 1 - math.exp(-speed * dt)
+        self.currentPct = self.currentPct + (self.targetPct - self.currentPct) * alpha
+
+        updateHealthBar(self.healthBar, bPos, bSize, self.currentPct, true)
+    else
+        updateHealthBar(self.healthBar, bPos, bSize, self.currentPct, false)
+    end
+
+    -- ── Chams ───────────────────────────────────────────────────────────────
+    self.highlight.Enabled = ESP_CONFIG.ShowChams
+    if ESP_CONFIG.ShowChams and ESP_CONFIG.AnimateChams then
+        if not self.currentTween
+        or self.currentTween.PlaybackState ~= Enum.PlaybackState.Playing then
+            self:PlayAnim()
+        end
     end
 end
 
+-- ── Visibility helper ───────────────────────────────────────────────────────
 function HorseObject:SetVisible(val)
-    local items = {self.box, self.boxOut, self.name, self.nameOut, self.health, self.healthOut}
-    for _, v in pairs(items) do v.Visible = val end
+    hideCornerBrackets(self.cornerBox)
+    hideFullBox(self.fullBox)
+    self.name.Visible = val
+    self.dist.Visible = val
+    updateHealthBar(self.healthBar, Vector2.new(0,0), Vector2.new(0,0), 0, false)
 end
 
+-- ── Cleanup ─────────────────────────────────────────────────────────────────
 function HorseObject:Destruct()
-    self.renderConnection:Disconnect(); for _, v in pairs({self.box, self.boxOut, self.name, self.nameOut, self.health, self.healthOut}) do v:Remove() end
-    self.highlight:Destroy();
+    self.renderConnection:Disconnect()
+    removeCornerBrackets(self.cornerBox)
+    removeFullBox(self.fullBox)
+    self.name:Remove()
+    self.dist:Remove()
+    removeHealthBar(self.healthBar)
+    if self.currentTween then self.currentTween:Cancel() end
+    self.highlight:Destroy()
 end
 
-local HorseInterface = { _horseCache = {} };
+-- ════════════════════════════════════════════════════════════════════════════
+--  HORSE INTERFACE  –  original GetDescendants logic, faster + instant event
+-- ════════════════════════════════════════════════════════════════════════════
+local HorseInterface = { _horseCache = {} }
+
+local function tryRegister(model)
+    local lp = players.LocalPlayer
+    if not model:IsA("Model")                      then return end
+    if not model:FindFirstChildOfClass("Humanoid") then return end
+    if lp and model == lp.Character                then return end
+    if model.Name:find("Player")                   then return end
+    if not (model:FindFirstChildWhichIsA("AlignPosition", true)
+         or model:FindFirstChild("CaptureProgress", true))   then return end
+    if HorseInterface._horseCache[model]           then return end
+    HorseInterface._horseCache[model] = HorseObject.new(model)
+end
+
+-- Instant pickup: only fires once per NPC (when its Humanoid replicates),
+-- not for every part/weld/script — so zero spam, zero lag.
+workspace.DescendantAdded:Connect(function(obj)
+    if obj:IsA("Humanoid") then
+        local model = obj.Parent
+        if model then
+            task.defer(function()
+                tryRegister(model)
+            end)
+        end
+    end
+end)
+
+-- Safety-net scan: same GetDescendants logic as the original,
+-- just running 8× faster to catch anything the event missed.
 task.spawn(function()
     while true do
         local lp = players.LocalPlayer
         if lp and lp.Character then
             for _, model in ipairs(workspace:GetDescendants()) do
-                if model:IsA("Model") and model:FindFirstChildOfClass("Humanoid") and model ~= lp.Character then
-                    if (model:FindFirstChildWhichIsA("AlignPosition", true) or model:FindFirstChild("CaptureProgress", true)) and not model.Name:find("Player") then
-                        if not HorseInterface._horseCache[model] then HorseInterface._horseCache[model] = HorseObject.new(model); end
-                    end
-                end
+                tryRegister(model)
             end
         end
-        for m, o in pairs(HorseInterface._horseCache) do if not m.Parent then o:Destruct(); HorseInterface._horseCache[m] = nil; end end
-        task.wait(2);
+        for m, o in pairs(HorseInterface._horseCache) do
+            if not m.Parent then
+                o:Destruct()
+                HorseInterface._horseCache[m] = nil
+            end
+        end
+        task.wait(0.25)
     end
 end)
 
+-- ════════════════════════════════════════════════════════════════════════════
+--  PUBLIC HELPERS  –  call after mutating ESP_CONFIG
+-- ════════════════════════════════════════════════════════════════════════════
 function UpdateAllHorseAnimations()
-    for _, obj in pairs(HorseInterface._horseCache) do obj:PlayAnim() end
+    for _, obj in pairs(HorseInterface._horseCache) do
+        obj:PlayAnim()
+    end
 end
 
 local function UpdateAllHorseVisuals()
-    for _, horseObject in pairs(HorseInterface._horseCache) do
-        -- Sync the drawing objects and highlight
-        if horseObject.name then horseObject.name.Color = ESP_CONFIG.NameColor end
-        if horseObject.box then horseObject.box.Color = ESP_CONFIG.BoxColor end
-        if horseObject.highlight then 
-            horseObject.highlight.FillColor = ESP_CONFIG.ChamColor
-            horseObject.highlight.OutlineColor = ESP_CONFIG.ChamColor
+    for _, obj in pairs(HorseInterface._horseCache) do
+        if obj.name    then obj.name.Color  = ESP_CONFIG.NameColor end
+        if obj.dist    then obj.dist.Color  = ESP_CONFIG.DistColor end
+        if obj.fullBox then
+            obj.fullBox.main.Color = ESP_CONFIG.BoxColor
+        end
+        if obj.cornerBox then
+            for _, pair in ipairs(obj.cornerBox) do
+                pair.main.Color = ESP_CONFIG.BoxColor
+            end
+        end
+        if obj.highlight then
+            obj.highlight.FillColor    = ESP_CONFIG.ChamColor
+            obj.highlight.OutlineColor = ESP_CONFIG.ChamColor
         end
     end
 end
@@ -1055,13 +1391,47 @@ LeftGroupBox:AddToggle('AutoLasso_Enable', {
 })
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local HorseVariants = require(ReplicatedStorage.References.HorseVariants)
+local HttpService       = game:GetService("HttpService")
+local HorseVariants     = require(ReplicatedStorage.References.HorseVariants)
 local SpecialItemIndicators = require(ReplicatedStorage.References.SpecialItemIndicators)
 
--- ─────────────────────────────────────────────
--- Lock options
--- ─────────────────────────────────────────────
+-- ════════════════════════════════════════════════════════════════════════════
+--  WEBHOOK CONFIG
+--  Set WEBHOOK_URL to your Discord webhook URL.
+--  Toggle each field on/off by setting it to true or false.
+-- ════════════════════════════════════════════════════════════════════════════
+local WEBHOOK_CONFIG = {
+    -- Master switch — set to true to enable webhook notifications
+    SEND_WEBHOOK    = false,
 
+    WEBHOOK_URL     = "",
+
+    -- Top-right thumbnail image URL (leave "" to disable)
+    THUMBNAIL_URL   = "https://media.discordapp.net/attachments/1480171098426576957/1487540859263258855/new32.png?ex=69c983e2&is=69c83262&hm=c24faf964608b9f453bbaa19fba2371986ab8d886b806fa85e99cb7f563eb574&=&format=webp&quality=lossless&width=673&height=673",
+
+    -- Toggle individual fields in the embed
+    SHOW_BREED      = false,
+    SHOW_COAT       = false,
+    SHOW_MANE       = false,
+    SHOW_TAIL       = false,
+    SHOW_HORN       = false,
+    SHOW_STATS      = false,
+    SHOW_FOOD       = false,
+    SHOW_INDICATOR  = false,   -- special item indicator reason it was locked
+    SHOW_NAT_DYED   = false,
+    SHOW_MISMATCH   = false,
+
+    -- Embed accent colour (decimal, default = soft purple)
+    EMBED_COLOR     = 9830399,   -- 0x95AFFE converted to decimal
+
+    -- Username / avatar shown in Discord
+    BOT_USERNAME    = "perc.hook • AutoSell",
+    BOT_AVATAR_URL  = "https://media.discordapp.net/attachments/1480171098426576957/1487540859263258855/new32.png?ex=69c983e2&is=69c83262&hm=c24faf964608b9f453bbaa19fba2371986ab8d886b806fa85e99cb7f563eb574&=&format=webp&quality=lossless&width=673&height=673",        -- leave "" for default
+}
+
+-- ════════════════════════════════════════════════════════════════════════════
+--  LOCK OPTIONS
+-- ════════════════════════════════════════════════════════════════════════════
 local LOCK_INDICATOR_OPTIONS = {
     "mismatchHairColour",
     "naturallyDyedHairColour",
@@ -1081,90 +1451,210 @@ end
 
 local RARE_THRESHOLD = 0.975
 
--- ─────────────────────────────────────────────
--- Direct island unique hair colour key lookup
--- (matches the keys used in HorseVariants.maneAndTailColour)
--- ─────────────────────────────────────────────
-
 local ISLAND_UNIQUE_HAIR = {
-    ["blessed"]          = true,
-    ["iceyBlue"]         = true,
-    ["iceyWhite"]        = true,
-    ["iceyPink"]         = true,
-    ["iceyBlack"]        = true,
-    ["iceyGreen"]        = true,
-    ["winterStreaks"]     = true,
-    ["flowery"]          = true,
-    ["pearlyGreen"]      = true,
-    ["leafy"]            = true,
-    ["pearly"]           = true,
-    ["pastelStreaks"]     = true,
-    ["leathery"]         = true,
-    ["royalStreaks"]      = true,
-    ["cowPrint"]         = true,
-    ["pearlyPink"]       = true,
-    ["clearQuartz"]      = true,
-    ["zebraStripes"]     = true,
-    ["dustyFade"]        = true,
-    ["limestone"]        = true,
-    ["sandstone"]        = true,
-    ["ruby"]             = true,
-    ["pearlyRed"]        = true,
-    ["glacierGreen"]     = true,
-    ["glacierPink"]      = true,
-    ["glacierBlue"]      = true,
-    ["snowyGlacierFade"] = true,
-    ["pinkCowPrint"]     = true,
-    ["diamond"]          = true,
-    ["sapphire"]         = true,
-    ["pearlyOrange"]     = true,
-    ["sunriseStreaks"]    = true,
-    ["amethyst"]         = true,
-    ["topaz"]            = true,
-    ["jaguarSpots"]      = true,
-    ["mossy"]            = true,
-    ["tigerStripes"]     = true,
-    ["emerald"]          = true,
-    ["deepSpace"]        = true,
-    ["neonBlue"]         = true,
-    ["obsidian"]         = true,
-    ["neonPurple"]       = true,
-    ["moonstone"]        = true,
-    ["pearlyBlue"]       = true,
-    ["volcanicOrange"]   = true,
-    ["pearlyBlack"]      = true,
-    ["crackedLavaFade"]  = true,
-    ["volcanicBlack"]    = true,
-    ["prismatic"]        = true,
+    ["blessed"]=true,["iceyBlue"]=true,["iceyWhite"]=true,["iceyPink"]=true,
+    ["iceyBlack"]=true,["iceyGreen"]=true,["winterStreaks"]=true,["flowery"]=true,
+    ["pearlyGreen"]=true,["leafy"]=true,["pearly"]=true,["pastelStreaks"]=true,
+    ["leathery"]=true,["royalStreaks"]=true,["cowPrint"]=true,["pearlyPink"]=true,
+    ["clearQuartz"]=true,["zebraStripes"]=true,["dustyFade"]=true,["limestone"]=true,
+    ["sandstone"]=true,["ruby"]=true,["pearlyRed"]=true,["glacierGreen"]=true,
+    ["glacierPink"]=true,["glacierBlue"]=true,["snowyGlacierFade"]=true,
+    ["pinkCowPrint"]=true,["diamond"]=true,["sapphire"]=true,["pearlyOrange"]=true,
+    ["sunriseStreaks"]=true,["amethyst"]=true,["topaz"]=true,["jaguarSpots"]=true,
+    ["mossy"]=true,["tigerStripes"]=true,["emerald"]=true,["deepSpace"]=true,
+    ["neonBlue"]=true,["obsidian"]=true,["neonPurple"]=true,["moonstone"]=true,
+    ["pearlyBlue"]=true,["volcanicOrange"]=true,["pearlyBlack"]=true,
+    ["crackedLavaFade"]=true,["volcanicBlack"]=true,["prismatic"]=true,
 }
 
 local ACTION_DELAY = 0.5
 
-local function shouldLockHorse(itemData)
-    if not itemData then return false end
-    local variants = itemData.variants
-    if not variants then return false end
+-- ════════════════════════════════════════════════════════════════════════════
+--  WEBHOOK SENDER
+-- ════════════════════════════════════════════════════════════════════════════
 
-    -- ── 1. Coat colour ──────────────────────────────────────────────
+-- Converts a camelCase or underscore key into a readable title
+local function prettify(str)
+    if not str then return "Unknown" end
+    -- insert space before uppercase letters
+    str = str:gsub("(%u)", " %1")
+    -- capitalise first letter
+    str = str:sub(1,1):upper() .. str:sub(2)
+    return str
+end
+
+local function sendLockWebhook(guid, itemData, lockReason)
+    -- Master switch guard
+    if not WEBHOOK_CONFIG.SEND_WEBHOOK then return end
+
+    if WEBHOOK_CONFIG.WEBHOOK_URL == "" or
+       WEBHOOK_CONFIG.WEBHOOK_URL:find("YOUR_WEBHOOK_HERE") then
+        warn("[Webhook] No webhook URL set – skipping notification.")
+        return
+    end
+
+    local cfg      = WEBHOOK_CONFIG
+    local variants = itemData and itemData.variants or {}
+    local fields   = {}
+
+    local function addField(name, value, inline)
+        if value and value ~= "" then
+            table.insert(fields, {
+                name   = name,
+                value  = tostring(value),
+                inline = inline or false,
+            })
+        end
+    end
+
+    -- ── Lock reason (always shown) ───────────────────────────────────
+    addField("🔒  Lock Reason", prettify(lockReason), false)
+
+    -- ── Breed ────────────────────────────────────────────────────────
+    if cfg.SHOW_BREED then
+        addField("🐴  Breed", prettify(itemData and itemData.breed or variants.breed), true)
+    end
+
+    -- ── Coat ─────────────────────────────────────────────────────────
+    if cfg.SHOW_COAT then
+        addField("🎨  Coat", prettify(variants.colour), true)
+    end
+
+    -- ── Mane ─────────────────────────────────────────────────────────
+    if cfg.SHOW_MANE then
+        addField("💈  Mane", prettify(variants.maneColour), true)
+    end
+
+    -- ── Tail ─────────────────────────────────────────────────────────
+    if cfg.SHOW_TAIL then
+        addField("✨  Tail", prettify(variants.tailColour), true)
+    end
+
+    -- ── Horn ─────────────────────────────────────────────────────────
+    if cfg.SHOW_HORN and variants.horn and variants.horn ~= "" then
+        addField("🦄  Horn", prettify(variants.horn), true)
+    end
+
+    -- ── Special indicator ────────────────────────────────────────────
+    if cfg.SHOW_INDICATOR then
+        local ind = itemData and itemData.specialItemIndicator
+            or (variants.colour and HorseVariants.colour[variants.colour]
+                and HorseVariants.colour[variants.colour].specialItemIndicator)
+        if ind then
+            addField("⭐  Special Type", prettify(ind), true)
+        end
+    end
+
+    -- ── Naturally dyed ───────────────────────────────────────────────
+    if cfg.SHOW_NAT_DYED and itemData and itemData.isNatDyed then
+        addField("🌿  Naturally Dyed", "Yes", true)
+    end
+
+    -- ── Mismatch ─────────────────────────────────────────────────────
+    if cfg.SHOW_MISMATCH then
+        local mane = itemData and (itemData.maneColourOg or variants.maneColour)
+        local tail = itemData and (itemData.tailColourOg or variants.tailColour)
+        if mane and tail and mane ~= tail then
+            addField("🔀  Mane ≠ Tail", prettify(mane) .. " / " .. prettify(tail), true)
+        end
+    end
+
+    -- ── Stats ────────────────────────────────────────────────────────
+    if cfg.SHOW_STATS then
+        local stats = itemData and itemData.stats
+        if stats then
+            local statStr = ""
+            for k, v in pairs(stats) do
+                statStr = statStr .. prettify(k) .. ": **" .. tostring(v) .. "**\n"
+            end
+            if statStr ~= "" then
+                addField("📊  Stats", statStr, false)
+            end
+        end
+    end
+
+    -- ── Favourite food ───────────────────────────────────────────────
+    if cfg.SHOW_FOOD then
+        local food = itemData and (itemData.favouriteFood or itemData.favoriteFood
+            or itemData.favFood or (itemData.data and itemData.data.favouriteFood))
+        if food then
+            addField("🍎  Favourite Food", prettify(food), true)
+        end
+    end
+
+    -- ── GUID (always at bottom) ──────────────────────────────────────
+    addField("🆔  GUID", guid, false)
+
+    -- ── Build embed ──────────────────────────────────────────────────
+    local embed = {
+        title       = "🔒  Horse Locked",
+        description = "A horse was locked by **AutoSell** — check the details below.",
+        color       = cfg.EMBED_COLOR,
+        fields      = fields,
+        footer      = {
+            text = "perc.hook • AutoSell  |  " .. os.date("%d/%m/%Y %H:%M:%S"),
+        },
+        timestamp   = os.date("!%Y-%m-%dT%H:%M:%SZ"),
+    }
+
+    -- Thumbnail (top-right image)
+    if cfg.THUMBNAIL_URL and cfg.THUMBNAIL_URL ~= "" then
+        embed.thumbnail = { url = cfg.THUMBNAIL_URL }
+    end
+
+    local payload = {
+        username   = cfg.BOT_USERNAME,
+        embeds     = { embed },
+    }
+
+    if cfg.BOT_AVATAR_URL and cfg.BOT_AVATAR_URL ~= "" then
+        payload.avatar_url = cfg.BOT_AVATAR_URL
+    end
+
+    -- Fire and forget — errors are caught so they never break AutoSell
+    task.spawn(function()
+        local ok, err = pcall(function()
+            local request = http_request or request or syn.request or (httpservice and httpservice.request)
+            if not request then
+                warn("[Webhook] No HTTP request function found in your executor.")
+                return
+            end
+            request({
+                Url     = cfg.WEBHOOK_URL,
+                Method  = "POST",
+                Headers = { ["Content-Type"] = "application/json" },
+                Body    = HttpService:JSONEncode(payload),
+            })
+        end)
+        if not ok then
+            warn("[Webhook] Failed to send:", err)
+        end
+    end)
+end
+
+-- ════════════════════════════════════════════════════════════════════════════
+--  SHOULD LOCK  (unchanged logic, now returns the reason string too)
+-- ════════════════════════════════════════════════════════════════════════════
+
+local function shouldLockHorse(itemData)
+    if not itemData then return false, nil end
+    local variants = itemData.variants
+    if not variants then return false, nil end
+
     if variants.colour then
         local coatEntry = HorseVariants.colour[variants.colour]
         if coatEntry then
             local indicator = coatEntry.specialItemIndicator
             if indicator and LOCK_INDICATORS[indicator] == true then
-                warn("[AutoSell] LOCK - coat indicator:", indicator)
-                return true
+                return true, indicator
             end
-
             if LOCK_INDICATORS["rareCoat"] == true
-                and (coatEntry.rarityFloat or 0) >= RARE_THRESHOLD
-            then
-                warn("[AutoSell] LOCK - rare coat, rarityFloat:", coatEntry.rarityFloat)
-                return true
+            and (coatEntry.rarityFloat or 0) >= RARE_THRESHOLD then
+                return true, "rareCoat"
             end
         end
     end
 
-    -- ── 2 & 3. Mane & tail colour ───────────────────────────────────
     for _, key in ipairs({"maneColour", "tailColour"}) do
         local val = variants[key]
         if val then
@@ -1172,68 +1662,57 @@ local function shouldLockHorse(itemData)
             if hairEntry then
                 local indicator = hairEntry.specialItemIndicator
                 if indicator and LOCK_INDICATORS[indicator] == true then
-                    warn("[AutoSell] LOCK - hair indicator:", indicator, "from", key)
-                    return true
+                    return true, indicator
                 end
             end
-
-            if LOCK_INDICATORS["islandUniqueHairColour"] == true and ISLAND_UNIQUE_HAIR[val] == true then
-                warn("[AutoSell] LOCK - direct island unique hair match:", val, "from", key)
-                return true
+            if LOCK_INDICATORS["islandUniqueHairColour"] == true
+            and ISLAND_UNIQUE_HAIR[val] == true then
+                return true, "islandUniqueHairColour"
             end
         end
     end
 
-    -- ── 4. Mismatch mane ≠ tail ─────────────────────────────────────
     if LOCK_INDICATORS["mismatchHairColour"] == true then
         local mane = itemData.maneColourOg or variants.maneColour
         local tail = itemData.tailColourOg or variants.tailColour
         if mane and tail and mane ~= tail then
-            warn("[AutoSell] LOCK - mismatch mane:", mane, "tail:", tail)
-            return true
+            return true, "mismatchHairColour"
         end
     end
 
-    -- ── 5. Naturally dyed ────────────────────────────────────────────
-    if LOCK_INDICATORS["naturallyDyedHairColour"] == true and itemData.isNatDyed == true then
-        warn("[AutoSell] LOCK - naturally dyed")
-        return true
+    if LOCK_INDICATORS["naturallyDyedHairColour"] == true
+    and itemData.isNatDyed == true then
+        return true, "naturallyDyedHairColour"
     end
 
-    -- ── 6. Top-level item indicator ──────────────────────────────────
     if itemData.specialItemIndicator
-        and LOCK_INDICATORS[itemData.specialItemIndicator] == true
-    then
-        warn("[AutoSell] LOCK - item indicator:", itemData.specialItemIndicator)
-        return true
+    and LOCK_INDICATORS[itemData.specialItemIndicator] == true then
+        return true, itemData.specialItemIndicator
     end
 
-    return false
+    return false, nil
 end
 
--- ─────────────────────────────────────────────
--- Module acquisition
--- ─────────────────────────────────────────────
+-- ════════════════════════════════════════════════════════════════════════════
+--  MODULE ACQUISITION
+-- ════════════════════════════════════════════════════════════════════════════
 
-local Modules = getloadedmodules()
-local Network = nil
+local Modules          = getloadedmodules()
+local Network          = nil
 local InventoryHandler = nil
 
 for _, Value in Modules do
     if not Value or Value.ClassName ~= "ModuleScript" then continue end
-    if Value.Name == "Network" then
-        Network = require(Value)
-    elseif Value.Name == "InventoryHandler" then
-        InventoryHandler = require(Value)
-    end
+    if Value.Name == "Network"          then Network          = require(Value) end
+    if Value.Name == "InventoryHandler" then InventoryHandler = require(Value) end
 end
 
--- ─────────────────────────────────────────────
--- Autosell toggle
--- ─────────────────────────────────────────────
+-- ════════════════════════════════════════════════════════════════════════════
+--  AUTOSELL TOGGLE
+-- ════════════════════════════════════════════════════════════════════════════
 
 local autosell_enabled = false
-local bindConnection = nil
+local bindConnection   = nil
 
 local function toggleAutosell(state)
     autosell_enabled = (state ~= nil) and state or (not autosell_enabled)
@@ -1243,32 +1722,16 @@ local function toggleAutosell(state)
             bindConnection = InventoryHandler.Bind("Added", function(guid, itemData)
                 if not autosell_enabled then return end
 
-                -- DEBUG
-                warn("=== NEW HORSE ADDED ===")
-                warn("GUID:", guid)
-                if itemData then
-                    for k, v in pairs(itemData) do
-                        if type(v) == "table" then
-                            warn(k, "=>")
-                            for k2, v2 in pairs(v) do
-                                warn("   ", k2, "=", tostring(v2))
-                            end
-                        else
-                            warn(k, "=", tostring(v))
-                        end
-                    end
-                else
-                    warn("itemData is NIL")
-                end
-                warn("shouldLock:", shouldLockHorse(itemData))
-                warn("=======================")
+                local shouldLock, lockReason = shouldLockHorse(itemData)
 
                 task.delay(ACTION_DELAY, function()
                     if not autosell_enabled then return end
 
-                    if shouldLockHorse(itemData) then
-                        warn("[AutoSell] Locking:", guid)
+                    if shouldLock then
+                        warn("[AutoSell] Locking:", guid, "| Reason:", lockReason)
                         Network:FireServer("Inventory", "Lock", guid)
+                        -- Send webhook notification with full horse info
+                        sendLockWebhook(guid, itemData, lockReason)
                     else
                         warn("[AutoSell] Selling:", guid)
                         Network:FireServer("Shopping", "QuickSellItem", guid)
@@ -1928,8 +2391,106 @@ Ores:AddSlider('Click_Time', {
     end
 })
 
-local Collectables = Tabs.Main:AddRightGroupbox('Collectables')
+local Webhookstuff = Tabs.Main:AddRightGroupbox('Webhook')
 
+Webhookstuff:AddToggle('Webhook_Enable', {
+    Text     = 'Send Webhook',
+    Default  = false,
+    Tooltip  = 'Master switch — sends a Discord webhook when a horse is locked',
+    Callback = function(Value)
+        WEBHOOK_CONFIG.SEND_WEBHOOK = Value
+    end
+})
+
+Webhookstuff:AddDropdown('Webhooktypes', {
+    Values  = {"Breed", "Coat", "Mane", "Tail", "Horn", "Stats", "Food", "Indicator", "Naturally Dyed", "Mismatch"},
+    Default = {""},
+    Multi   = true,
+    Text    = 'Webhook Fields',
+    Tooltip = 'Choose which fields to include in the Discord embed',
+
+    Callback = function(SelectedTable)
+        -- Reset all to false first
+        WEBHOOK_CONFIG.SHOW_BREED     = false
+        WEBHOOK_CONFIG.SHOW_COAT      = false
+        WEBHOOK_CONFIG.SHOW_MANE      = false
+        WEBHOOK_CONFIG.SHOW_TAIL      = false
+        WEBHOOK_CONFIG.SHOW_HORN      = false
+        WEBHOOK_CONFIG.SHOW_STATS     = false
+        WEBHOOK_CONFIG.SHOW_FOOD      = false
+        WEBHOOK_CONFIG.SHOW_INDICATOR = false
+        WEBHOOK_CONFIG.SHOW_NAT_DYED  = false
+        WEBHOOK_CONFIG.SHOW_MISMATCH  = false
+
+        -- Enable only the selected ones
+        if SelectedTable["Breed"]         then WEBHOOK_CONFIG.SHOW_BREED     = true end
+        if SelectedTable["Coat"]          then WEBHOOK_CONFIG.SHOW_COAT      = true end
+        if SelectedTable["Mane"]          then WEBHOOK_CONFIG.SHOW_MANE      = true end
+        if SelectedTable["Tail"]          then WEBHOOK_CONFIG.SHOW_TAIL      = true end
+        if SelectedTable["Horn"]          then WEBHOOK_CONFIG.SHOW_HORN      = true end
+        if SelectedTable["Stats"]         then WEBHOOK_CONFIG.SHOW_STATS     = true end
+        if SelectedTable["Food"]          then WEBHOOK_CONFIG.SHOW_FOOD      = true end
+        if SelectedTable["Indicator"]     then WEBHOOK_CONFIG.SHOW_INDICATOR = true end
+        if SelectedTable["Naturally Dyed"] then WEBHOOK_CONFIG.SHOW_NAT_DYED = true end
+        if SelectedTable["Mismatch"]      then WEBHOOK_CONFIG.SHOW_MISMATCH  = true end
+    end
+})
+
+Webhookstuff:AddInput("WebhookUrl", {
+	Default = "YOUR_WEBHOOK_HERE", -- or empty string if you prefer
+	Numeric = false, -- true / false, only allows numbers
+	Finished = false, -- true / false, only calls callback when you press enter
+	ClearTextOnFocus = true, -- true / false, if false the text will not clear when textbox focused
+
+	Tooltip = "Input Webhook URL", -- Information shown when you hover over the textbox
+
+	Placeholder = "URL", -- placeholder text when the box is empty
+	-- MaxLength is also an option which is the max length of the text
+
+	Callback = function(Value)
+		WEBHOOK_CONFIG.WEBHOOK_URL = Value
+	end,
+})
+
+Webhookstuff:AddButton({
+    Text    = 'Test Webhook',
+    Tooltip = 'Sends a test embed to your webhook URL to verify it works',
+    Callback = function()
+        if not WEBHOOK_CONFIG.SEND_WEBHOOK then
+            Library:Notify("Webhook master switch is off — enable it first.")
+            return
+        end
+
+        if WEBHOOK_CONFIG.WEBHOOK_URL == ""
+        or WEBHOOK_CONFIG.WEBHOOK_URL:find("YOUR_WEBHOOK_HERE") then
+            Library:Notify("No webhook URL set — fill in WEBHOOK_URL first.")
+            return
+        end
+
+        local testItemData = {
+            breed    = "testBreed",
+            isNatDyed = true,
+            specialItemIndicator = "specialCoat",
+            variants = {
+                colour      = "testCoat",
+                maneColour  = "testMane",
+                tailColour  = "testTailDifferent",   -- intentionally different for mismatch
+                horn        = "testHorn",
+            },
+            stats = {
+                speed     = 99,
+                stamina   = 88,
+                agility   = 77,
+            },
+            favouriteFood = "goldenApple",
+        }
+
+        task.spawn(function()
+            sendLockWebhook("TEST-GUID-0000", testItemData, "specialCoat")
+            Library:Notify("Test webhook sent! Check your Discord channel.")
+        end)
+    end
+})
 
 local ESP = Tabs.Visuals:AddLeftGroupbox('Visuals')
 
@@ -2007,16 +2568,6 @@ task.spawn(function()
     end
 end)
 
-ESP:AddToggle('ESP_Enable', {
-    Text = 'Enable',
-    Default = false, 
-    Tooltip = 'Enables ESP', 
-
-    Callback = function(Value)
-        ESP_CONFIG.Enabled = Value
-    end
-})
-
 ESP:AddToggle('ESP_Box', {
     Text = 'Boxes',
     Default = false, 
@@ -2036,25 +2587,6 @@ ESP:AddToggle('ESP_Box', {
 }):OnChanged(function()
     ESP_CONFIG.BoxTransparency = Options.BoxColor.Transparency
 end)
-
-ESP:AddToggle('ESP_Names', {
-    Text = 'Names',
-    Default = false, 
-    Tooltip = 'Enables names', 
-
-    Callback = function(Value)
-        ESP_CONFIG.ShowNames = Value
-    end
-}):AddColorPicker('NameColor', {
-    Default = Color3.new(0.318, 0.322, 0.490),
-    Title = 'Some color',
-    Transparency = 0,
-
-    Callback = function(Value)
-        ESP_CONFIG.NameColor = Value
-        UpdateAllHorseVisuals()
-    end
-})
 
 ESP:AddToggle('ESP_Chams', {
     Text = 'Chams',
@@ -2175,6 +2707,31 @@ ESP:AddToggle('ESP_ChamsAnimate', {
     end
 })
 
+ESP:AddDropdown('AnimationStyle', {
+    Values = {'Pulse', 'Breathe', 'Shift', 'Flash'},
+    Default = 1,
+    Title = 'Animation Style',
+    Callback = function(Value)
+        ESP_CONFIG.AnimationStyle = Value
+        
+        -- Instantly update all existing horses to the new animation style
+        for _, horseObject in pairs(HorseInterface._horseCache) do
+            if ESP_CONFIG.AnimateChams then
+                horseObject:PlayAnim()
+            end
+        end
+    end
+})
+
+ESP:AddDropdown('BoxType', {
+    Values = {'Full', 'Corner'},
+    Default = 1,
+    Title = 'Box Type',
+    Callback = function(Value)
+        ESP_CONFIG.BoxStyle = Value
+    end
+})
+
 ESP:AddSlider('AnimSpeed', {
     Text = 'Animation Speed',
     Default = 1,
@@ -2195,19 +2752,17 @@ ESP:AddSlider('AnimSpeed', {
         end
     end
 })
-ESP:AddDropdown('AnimationStyle', {
-    Values = {'Pulse', 'Breathe', 'Shift', 'Flash'},
-    Default = 1,
-    Title = 'Animation Style',
+
+ESP:AddSlider('ESP_MaxDistance', {
+    Text = 'Max Distance',
+    Default = 500,
+    Min = 0,
+    Max = 2000,
+    Rounding = 1,
+    Compact = false,
+
     Callback = function(Value)
-        ESP_CONFIG.AnimationStyle = Value
-        
-        -- Instantly update all existing horses to the new animation style
-        for _, horseObject in pairs(HorseInterface._horseCache) do
-            if ESP_CONFIG.AnimateChams then
-                horseObject:PlayAnim()
-            end
-        end
+        ESP_CONFIG.MaxDistance = Value
     end
 })
 
@@ -2495,79 +3050,82 @@ BuyingMaterials:AddButton({
 
 local CraftingMaterials = Tabs.Crafting:AddRightGroupbox('Crafting')
 
-local craftAmount = 10
 
-local lassoList = {
-    ["Wooden Lasso"] = 17,
-    ["Tin Lasso"] = 18,
-    ["Copper Lasso"] = 19,
-    ["Bronze Lasso"] = 20,
-    ["Iron Lasso"] = 21,
-    ["Silver Lasso"] = 22,
-    ["Gold Lasso"] = 23,
-    ["Ruby Lasso"] = 24,
-    ["Diamond Lasso"] = 25,
-    ["Sapphire Lasso"] = 26,
-    ["Topaz Lasso"] = 27,
-    ["Emerald Lasso"] = 28,
-    ["Amethyst Lasso"] = 29,
-    ["Obsidian Lasso"] = 30,
-    ["Moonstone Lasso"] = 31,
-    ["Ice Lasso"] = 1243,
-}
+do
+    local craftAmount = 10
 
-local selectedLasso = "Wooden Lasso"
+    local lassoList = {
+        ["Wooden Lasso"] = 17,
+        ["Tin Lasso"] = 18,
+        ["Copper Lasso"] = 19,
+        ["Bronze Lasso"] = 20,
+        ["Iron Lasso"] = 21,
+        ["Silver Lasso"] = 22,
+        ["Gold Lasso"] = 23,
+        ["Ruby Lasso"] = 24,
+        ["Diamond Lasso"] = 25,
+        ["Sapphire Lasso"] = 26,
+        ["Topaz Lasso"] = 27,
+        ["Emerald Lasso"] = 28,
+        ["Amethyst Lasso"] = 29,
+        ["Obsidian Lasso"] = 30,
+        ["Moonstone Lasso"] = 31,
+        ["Ice Lasso"] = 1243,
+    }
 
-CraftingMaterials:AddDropdown('LassoSelector', {
-    Values = {
-        "Wooden Lasso", "Tin Lasso", "Copper Lasso", "Bronze Lasso",
-        "Iron Lasso", "Silver Lasso", "Gold Lasso", "Ruby Lasso",
-        "Diamond Lasso", "Sapphire Lasso", "Topaz Lasso", "Emerald Lasso",
-        "Amethyst Lasso", "Obsidian Lasso", "Moonstone Lasso", "Ice Lasso"
-    },
-    Default = 1,
-    Title = 'Select Lasso',
-    Callback = function(Value)
-        selectedLasso = Value
-    end
-})
+    local selectedLasso = "Wooden Lasso"
 
-CraftingMaterials:AddSlider("Craft Amount", {
-    Text = "Craft Amount",
-    Default = 10,
-    Min = 1,
-    Max = 1000,
-    Rounding = 0,
-    Callback = function(Value)
-        craftAmount = Value
-    end,
-    Tooltip = "Amount of lassos to craft",
-    Disabled = false,
-    Visible = true,
-})
-
-CraftingMaterials:AddButton({
-    Text = "Craft Lasso",
-    Func = function()
-        local id = lassoList[selectedLasso]
-        if not id then
-            warn("Invalid lasso selected")
-            return
+    CraftingMaterials:AddDropdown('LassoSelector', {
+        Values = {
+            "Wooden Lasso", "Tin Lasso", "Copper Lasso", "Bronze Lasso",
+            "Iron Lasso", "Silver Lasso", "Gold Lasso", "Ruby Lasso",
+            "Diamond Lasso", "Sapphire Lasso", "Topaz Lasso", "Emerald Lasso",
+            "Amethyst Lasso", "Obsidian Lasso", "Moonstone Lasso", "Ice Lasso"
+        },
+        Default = 1,
+        Title = 'Select Lasso',
+        Callback = function(Value)
+            selectedLasso = Value
         end
-        local m_References = require(game:GetService("ReplicatedStorage"):WaitForChild("References"))
-        local Utilities = m_References.Utilities
-        Utilities.Network:FireServer("Crafting", "Craft", {
-            id = id,
-            variants = {},
-            amt = craftAmount
-        })
-    end,
-    DoubleClick = false,
-    Tooltip = "Crafts selected lasso",
-    Disabled = false,
-    Visible = true,
-    Risky = true,
-})
+    })
+
+    CraftingMaterials:AddSlider("Craft Amount", {
+        Text = "Craft Amount",
+        Default = 10,
+        Min = 1,
+        Max = 1000,
+        Rounding = 0,
+        Callback = function(Value)
+            craftAmount = Value
+        end,
+        Tooltip = "Amount of lassos to craft",
+        Disabled = false,
+        Visible = true,
+    })
+
+    CraftingMaterials:AddButton({
+        Text = "Craft Lasso",
+        Func = function()
+            local id = lassoList[selectedLasso]
+            if not id then
+                warn("Invalid lasso selected")
+                return
+            end
+            local m_References = require(game:GetService("ReplicatedStorage"):WaitForChild("References"))
+            local Utilities = m_References.Utilities
+            Utilities.Network:FireServer("Crafting", "Craft", {
+                id = id,
+                variants = {},
+                amt = craftAmount
+            })
+        end,
+        DoubleClick = false,
+        Tooltip = "Crafts selected lasso",
+        Disabled = false,
+        Visible = true,
+        Risky = true,
+    })
+end
 
 local Redeeming = Tabs.Crafting:AddLeftGroupbox('Redeem')
 
@@ -2766,77 +3324,78 @@ getgenv().MountSpeedEnabled = false
 getgenv().MountJumpEnabled  = false
 getgenv().MountSpeedValue   = 16
 getgenv().MountJumpValue    = 50
+do
+    local cachedHorseHumanoid = nil
+    local originalSpeed       = nil
+    local originalJumpPower   = nil
+    local lastHorse           = nil
 
-local cachedHorseHumanoid = nil
-local originalSpeed       = nil
-local originalJumpPower   = nil
-local lastHorse           = nil
+    -- Track previous toggle states to detect changes
+    local prevSpeedEnabled = false
+    local prevJumpEnabled  = false
 
--- Track previous toggle states to detect changes
-local prevSpeedEnabled = false
-local prevJumpEnabled  = false
+    -- ============================================================
+    --  HORSE SCANNER
+    -- ============================================================
+    task.spawn(function()
+        while true do
+            local char    = player.Character
+            local hrp     = char and char:FindFirstChild("HumanoidRootPart")
+            local islands = workspace:FindFirstChild("Islands")
 
--- ============================================================
---  HORSE SCANNER
--- ============================================================
-task.spawn(function()
-    while true do
-        local char    = player.Character
-        local hrp     = char and char:FindFirstChild("HumanoidRootPart")
-        local islands = workspace:FindFirstChild("Islands")
+            if hrp and islands then
+                local bestMount  = nil
+                local minDistance = 250
 
-        if hrp and islands then
-            local bestMount  = nil
-            local minDistance = 250
+                for _, island in ipairs(islands:GetChildren()) do
+                    if island:FindFirstChild(player.Name) then
+                        for _, target in ipairs(island:GetDescendants()) do
+                            if target:IsA("Model") then
+                                local targetHRP = target:FindFirstChild("HumanoidRootPart")
+                                local hum       = target:FindFirstChildOfClass("Humanoid")
 
-            for _, island in ipairs(islands:GetChildren()) do
-                if island:FindFirstChild(player.Name) then
-                    for _, target in ipairs(island:GetDescendants()) do
-                        if target:IsA("Model") then
-                            local targetHRP = target:FindFirstChild("HumanoidRootPart")
-                            local hum       = target:FindFirstChildOfClass("Humanoid")
-
-                            if targetHRP and hum and (
-                                target:FindFirstChildWhichIsA("AlignPosition") or
-                                target:FindFirstChildWhichIsA("AlignOrientation")
-                            ) then
-                                local dist = (hrp.Position - targetHRP.Position).Magnitude
-                                if dist < minDistance then
-                                    minDistance = dist
-                                    bestMount   = hum
+                                if targetHRP and hum and (
+                                    target:FindFirstChildWhichIsA("AlignPosition") or
+                                    target:FindFirstChildWhichIsA("AlignOrientation")
+                                ) then
+                                    local dist = (hrp.Position - targetHRP.Position).Magnitude
+                                    if dist < minDistance then
+                                        minDistance = dist
+                                        bestMount   = hum
+                                    end
                                 end
                             end
                         end
                     end
                 end
-            end
 
-            if bestMount ~= lastHorse then
-                -- Restore previous horse before switching
-                if lastHorse and lastHorse.Parent then
-                    if originalSpeed     then lastHorse.WalkSpeed  = originalSpeed     end
-                    if originalJumpPower then
-                        lastHorse.UseJumpPower = true
-                        lastHorse.JumpPower    = originalJumpPower
+                if bestMount ~= lastHorse then
+                    -- Restore previous horse before switching
+                    if lastHorse and lastHorse.Parent then
+                        if originalSpeed     then lastHorse.WalkSpeed  = originalSpeed     end
+                        if originalJumpPower then
+                            lastHorse.UseJumpPower = true
+                            lastHorse.JumpPower    = originalJumpPower
+                        end
                     end
-                end
 
-                if bestMount then
-                    originalSpeed     = bestMount.WalkSpeed
-                    originalJumpPower = bestMount.JumpPower
-                else
-                    originalSpeed     = nil
-                    originalJumpPower = nil
-                end
+                    if bestMount then
+                        originalSpeed     = bestMount.WalkSpeed
+                        originalJumpPower = bestMount.JumpPower
+                    else
+                        originalSpeed     = nil
+                        originalJumpPower = nil
+                    end
 
-                lastHorse           = bestMount
-                cachedHorseHumanoid = bestMount
+                    lastHorse           = bestMount
+                    cachedHorseHumanoid = bestMount
+                end
             end
-        end
 
-        task.wait(1)
-    end
-end)
+            task.wait(1)
+        end
+    end)
+end
 
 -- ============================================================
 --  HEARTBEAT — APPLY MODIFIERS
