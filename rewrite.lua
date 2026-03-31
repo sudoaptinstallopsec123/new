@@ -1316,14 +1316,14 @@ EnableRichText()
 task.delay(0.5, EnableRichText)
 
 local Tabs = {
-    Main = Window:AddTab('Autofarm'),
-    Visuals = Window:AddTab('Visuals'),
-    Crafting = Window:AddTab('Crafting'),
-    Misc = Window:AddTab('Misc'),
-    ['UI Settings'] = Window:AddTab('UI Settings'),
+    Main = Window:AddTab('Autofarm', 'lasso'),
+    Visuals = Window:AddTab('Visuals', 'eye'),
+    Crafting = Window:AddTab('Crafting', 'pickaxe'),
+    Misc = Window:AddTab('Misc', 'ellipsis-vertical'),
+    ['UI Settings'] = Window:AddTab('UI Settings', 'settings'),
 }
 
-local LeftGroupBox = Tabs.Main:AddLeftGroupbox('Island')
+local LeftGroupBox = Tabs.Main:AddLeftGroupbox('Island', 'mountain')
 
 LeftGroupBox:AddToggle('Autofarm_Enable', {
     Text = 'Enable',
@@ -1352,34 +1352,69 @@ local LocalPlayer = game:GetService("Players").LocalPlayer
 
 _G.AutoLasso = _G.AutoLasso or { Enabled = false }
 
-local function equipLasso()
+local POLL_INTERVAL = 0.15       -- how often to check (seconds)
+local EQUIP_COOLDOWN = 0.5       -- min time between firing server
+local RETRY_ATTEMPTS = 3         -- retries if lasso doesn't equip
+local RETRY_DELAY = 0.3          -- delay between retries
+
+local lastEquipTime = 0
+local isEquipping = false
+
+local function tryEquipLasso()
+    if not (_G.AutoLasso and _G.AutoLasso.Enabled) then return end
+    if isEquipping then return end
+
+    local now = tick()
+    if (now - lastEquipTime) < EQUIP_COOLDOWN then return end
+
     local ok, err = pcall(function()
-        if not (_G.AutoLasso and _G.AutoLasso.Enabled) then return end
         local lassoSlot = m_Data.GetLocal({ "quickEquipment", "Lasso" })
         if not lassoSlot then return end
+
         local equipped = m_Data.GetLocal({ "temporary", "equippedEquipment" })
-        if equipped ~= lassoSlot then
-            Utilities.Network:FireServer("QuickEquipment", "Use", "Lasso")
+
+        -- Normalise to string to avoid type mismatch false-positives
+        if tostring(equipped) ~= tostring(lassoSlot) then
+            isEquipping = true
+            lastEquipTime = tick()
+
+            -- Retry loop in case the first fire doesn't register
+            for attempt = 1, RETRY_ATTEMPTS do
+                Utilities.Network:FireServer("QuickEquipment", "Use", "Lasso")
+
+                task.wait(RETRY_DELAY)
+
+                local nowEquipped = m_Data.GetLocal({ "temporary", "equippedEquipment" })
+                if tostring(nowEquipped) == tostring(lassoSlot) then
+                    break  -- Successfully equipped, stop retrying
+                end
+            end
+
+            isEquipping = false
         end
     end)
+
     if not ok then
+        isEquipping = false  -- Always release lock on error
         warn("[AutoLasso] Error:", err)
     end
 end
 
+-- Main polling loop
 task.spawn(function()
     while true do
-        task.wait(0.1)
-        equipLasso()
+        task.wait(POLL_INTERVAL)
+        tryEquipLasso()
     end
 end)
 
+-- Re-equip after respawn
 LocalPlayer.CharacterAdded:Connect(function()
     task.wait(1.5)
-    equipLasso()
+    isEquipping = false       -- Reset state on respawn
+    lastEquipTime = 0
+    tryEquipLasso()
 end)
-
-_G.AutoLasso = _G.AutoLasso or { Enabled = false }
 
 LeftGroupBox:AddToggle('AutoLasso_Enable', {
     Text = 'Auto Lasso',
@@ -1820,7 +1855,7 @@ local horseselloptions = LeftGroupBox:AddDropdown('HorsestoLock', {
 })
 
 
-local RightIslandsGroupBox = Tabs.Main:AddRightGroupbox('Island settings')
+local RightIslandsGroupBox = Tabs.Main:AddRightGroupbox('Island settings', 'settings')
 
 local islandDropdown = RightIslandsGroupBox:AddDropdown('Island_Select', {
     Text     = 'Select Island',
@@ -1862,7 +1897,7 @@ RightIslandsGroupBox:AddDropdown('Farm_Islands', {
     end
 })
 
-local RightGroupBox = Tabs.Main:AddRightGroupbox('Training')
+local RightGroupBox = Tabs.Main:AddRightGroupbox('Training', 'award')
 
 local RunService = game:GetService("RunService")
 local Players = game:GetService("Players")
@@ -1903,7 +1938,7 @@ RightGroupBox:AddToggle('Autotrain_Enable', {
     end
 })
 
-local Ores = Tabs.Main:AddLeftGroupbox('Ores')
+local Ores = Tabs.Main:AddLeftGroupbox('Ores', 'pickaxe')
 
 local VolcanoTeleports = {
     CFrame.new(3536.414, 20.998, -8541.338, -0.986777, 0.000000, 0.162083, 0.000000, 1.000000, -0.000000, -0.162083, -0.000000, -0.986777),
@@ -2391,7 +2426,7 @@ Ores:AddSlider('Click_Time', {
     end
 })
 
-local Webhookstuff = Tabs.Main:AddRightGroupbox('Webhook')
+local Webhookstuff = Tabs.Main:AddRightGroupbox('Webhook', 'mail')
 
 Webhookstuff:AddToggle('Webhook_Enable', {
     Text     = 'Send Webhook',
@@ -2492,7 +2527,7 @@ Webhookstuff:AddButton({
     end
 })
 
-local ESP = Tabs.Visuals:AddLeftGroupbox('Visuals')
+local ESP = Tabs.Visuals:AddLeftGroupbox('Visuals', 'eye')
 
 -- ============================================================
 --  GRADIENT SETTINGS
@@ -2766,21 +2801,8 @@ ESP:AddSlider('ESP_MaxDistance', {
     end
 })
 
-ESP:AddSlider('ESP_MaxDistance', {
-    Text = 'Max Distance',
-    Default = 500,
-    Min = 0,
-    Max = 2000,
-    Rounding = 1,
-    Compact = false,
-
-    Callback = function(Value)
-        ESP_CONFIG.MaxDistance = Value
-    end
-})
-
-local CharacterVisuals = Tabs.Visuals:AddRightGroupbox('Character')
-
+local CharacterVisuals = Tabs.Visuals:AddRightGroupbox('Character', 'user')
+do
 -- ============================================================
 --  LOCAL PLAYER HIGHLIGHT
 -- ============================================================
@@ -2923,6 +2945,7 @@ function UpdateHighlightSpeed(speed)
     getgenv().Highlight_Speed = speed
     playAnim()
 end
+end
 
 CharacterVisuals:AddToggle('EnableLocalHighlight', {
     Text    = 'Enable Highlight',
@@ -2969,7 +2992,7 @@ CharacterVisuals:AddSlider('AnimSpeed', {
     end
 })
 
-local BuyingMaterials = Tabs.Crafting:AddLeftGroupbox('Resources')
+local BuyingMaterials = Tabs.Crafting:AddLeftGroupbox('Resources', 'gem')
 
 local Events = game:GetService("ReplicatedStorage"):WaitForChild("Communication"):WaitForChild("Events")
 
@@ -3048,7 +3071,7 @@ BuyingMaterials:AddButton({
     Risky = true,
 })
 
-local CraftingMaterials = Tabs.Crafting:AddRightGroupbox('Crafting')
+local CraftingMaterials = Tabs.Crafting:AddRightGroupbox('Crafting', 'wrench')
 
 
 do
@@ -3127,7 +3150,7 @@ do
     })
 end
 
-local Redeeming = Tabs.Crafting:AddLeftGroupbox('Redeem')
+local Redeeming = Tabs.Crafting:AddLeftGroupbox('Redeem', 'gift')
 
 local Functions = game:GetService("ReplicatedStorage"):WaitForChild("Communication"):WaitForChild("Functions")
 
@@ -3269,7 +3292,7 @@ RunService.Heartbeat:Connect(function()
     prevSpeedEnabled = speedEnabled
     prevJumpEnabled  = jumpEnabled
 end)
-local Character = Tabs.Misc:AddLeftGroupbox('Character')
+local Character = Tabs.Misc:AddLeftGroupbox('Character', 'user')
 
 Character:AddToggle('WalkSpeed_Enable', {
     Text     = 'Walk Speed',
@@ -3324,7 +3347,7 @@ getgenv().MountSpeedEnabled = false
 getgenv().MountJumpEnabled  = false
 getgenv().MountSpeedValue   = 16
 getgenv().MountJumpValue    = 50
-do
+
     local cachedHorseHumanoid = nil
     local originalSpeed       = nil
     local originalJumpPower   = nil
@@ -3395,8 +3418,6 @@ do
             task.wait(1)
         end
     end)
-end
-
 -- ============================================================
 --  HEARTBEAT — APPLY MODIFIERS
 -- ============================================================
@@ -3432,6 +3453,7 @@ RunService.Heartbeat:Connect(function()
     prevSpeedEnabled = speedEnabled
     prevJumpEnabled  = jumpEnabled
 end)
+
 
 Character:AddToggle('MountSpeedToggle', {
     Text = 'Enable Speed',
@@ -3475,7 +3497,7 @@ Character:AddSlider('MountJumpSlider', {
     end
 })
 
-local Others = Tabs.Misc:AddRightGroupbox('Random')
+local Others = Tabs.Misc:AddRightGroupbox('Random', 'dices')
 
 local Button = Others:AddButton({
     Text = 'Dex',
@@ -3676,7 +3698,7 @@ Library:OnUnload(function()
 end)
 
 
-local MenuGroup = Tabs['UI Settings']:AddLeftGroupbox('Menu')
+local MenuGroup = Tabs['UI Settings']:AddLeftGroupbox('Menu', 'logs')
 
 MenuGroup:AddButton('Unload', function() Library:Unload() end)
 MenuGroup:AddButton('Join Discord', function() Library:Notify("Copied to clipboard.") setclipboard("https://discord.gg/UkPDe8hF4p") end)
