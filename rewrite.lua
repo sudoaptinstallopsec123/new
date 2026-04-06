@@ -724,6 +724,7 @@ task.spawn(function()
     end
 end)
 
+
 local runService   = game:GetService("RunService")
 local players      = game:GetService("Players")
 local workspace    = game:GetService("Workspace")
@@ -770,7 +771,7 @@ local ESP_CONFIG = {
 -- ════════════════════════════════════════════════════════════════════════════
 --  LOW-LEVEL DRAWING HELPERS
 -- ════════════════════════════════════════════════════════════════════════════
-
+do
 -- Text with built-in black outline (no second drawing needed)
 local function newText()
     local t   = Drawing.new("Text")
@@ -3499,15 +3500,6 @@ Character:AddSlider('MountJumpSlider', {
 
 local Others = Tabs.Misc:AddRightGroupbox('Random', 'dices')
 
-local Button = Others:AddButton({
-    Text = 'Dex',
-    Func = function()
-        loadstring(game:HttpGet("https://raw.githubusercontent.com/infyiff/backup/main/dex.lua"))()
-    end,
-    DoubleClick = false,
-    Tooltip = 'Executes dex'
-})
-
 local MyButton = Others:AddButton({
     Text = 'Copy CFrame',
     Func = function()
@@ -3706,6 +3698,8 @@ MenuGroup:AddLabel('Menu bind'):AddKeyPicker('MenuKeybind', { Default = 'RightSh
 
 Library.ToggleKeybind = Options.MenuKeybind
 
+local BlurSettings = Tabs['UI Settings']:AddLeftGroupbox('Blur', 'sparkles')
+
 local Lighting = game:GetService("Lighting")
 
 -- 1. Create/Re-use the Blur
@@ -3731,7 +3725,7 @@ Options.MenuKeybind:OnClick(function()
 end)
 
 -- 5. UI Controls
-MenuGroup:AddToggle('EnableBlur', {
+BlurSettings:AddToggle('EnableBlur', {
     Text = 'Enable Blur',
     Default = false,
     Callback = function(Value)
@@ -3740,7 +3734,7 @@ MenuGroup:AddToggle('EnableBlur', {
     end
 })
 
-MenuGroup:AddSlider('BlurValue', {
+BlurSettings:AddSlider('BlurValue', {
     Text = 'Blur Strength',
     Default = 20,
     Min = 1,
@@ -3795,3 +3789,4 @@ ThemeManager:ApplyToTab(Tabs['UI Settings'])
 SaveManager:LoadAutoloadConfig()
 
 ThemeManager:ApplyTheme('Default')
+end
