@@ -576,19 +576,23 @@ end)
 -- ============================================================
 --  AUTO-CLICKER
 -- ============================================================
-task.spawn(function()
-    while true do
-        local duration = tonumber(autoclick_duration) or AUTOCLICK_RATE
-        task.wait(duration)
+do
+    task.spawn(function()
+        local m_References = require(game:GetService("ReplicatedStorage"):WaitForChild("References"))
+        local m_EquipmentHandler = require(m_References.PlayerScripts.Secondary:WaitForChild("EquipmentHandler"))
+        
+        while true do
+            local duration = tonumber(autoclick_duration) or AUTOCLICK_RATE
+            task.wait(duration)
 
-        if autoclick_enabled and not UserInputService:GetFocusedTextBox() then
-            pcall(function()
-                local center = Camera.ViewportSize / 2
-                VirtualUser:ClickButton1(center, Camera.CFrame)
-            end)
+            if autoclick_enabled and m_EquipmentHandler.object then
+                local ok, err = pcall(function()
+                    m_EquipmentHandler.object:Activate()
+                end)
+            end
         end
-    end
-end)
+    end)
+end
 
 -- ============================================================
 --  AUTO-FARM
@@ -3503,28 +3507,30 @@ local Others = Tabs.Misc:AddRightGroupbox('Random', 'dices')
 local MyButton = Others:AddButton({
     Text = 'Copy CFrame',
     Func = function()
-        local Players = game:GetService("Players")
+        do
+            local Players = game:GetService("Players")
 
-        local player = Players.LocalPlayer
-        local character = player.Character or player.CharacterAdded:Wait()
-        local root = character:WaitForChild("HumanoidRootPart")
+            local player = Players.LocalPlayer
+            local character = player.Character or player.CharacterAdded:Wait()
+            local root = character:WaitForChild("HumanoidRootPart")
+                
+            local function formatCFrame(cf)
+                local components = {cf:GetComponents()}
+                return string.format(
+                    "CFrame.new(%.3f, %.3f, %.3f, %.6f, %.6f, %.6f, %.6f, %.6f, %.6f, %.6f, %.6f, %.6f)",
+                    unpack(components)
+                )
+            end
             
-        local function formatCFrame(cf)
-            local components = {cf:GetComponents()}
-            return string.format(
-                "CFrame.new(%.3f, %.3f, %.3f, %.6f, %.6f, %.6f, %.6f, %.6f, %.6f, %.6f, %.6f, %.6f)",
-                unpack(components)
-            )
-        end
-        
-        local formatted = formatCFrame(root.CFrame)
-        
-        if setclipboard then
-            setclipboard(formatted)
-            print("Copied CFrame to clipboard:")
-            print(formatted)
-        else
-            warn("setclipboard not supported in this environment.")
+            local formatted = formatCFrame(root.CFrame)
+            
+            if setclipboard then
+                setclipboard(formatted)
+                print("Copied CFrame to clipboard:")
+                print(formatted)
+            else
+                warn("setclipboard not supported in this environment.")
+            end
         end
     end,
     DoubleClick = false,
@@ -3534,7 +3540,9 @@ local MyButton = Others:AddButton({
 Others:AddButton({
     Text = 'TP to larry',
     Func = function()
-        teleportToLocation(larryTeleports)
+        do
+            teleportToLocation(larryTeleports)
+        end
     end,
     DoubleClick = false,
     Tooltip = 'Teleports to larry'
@@ -3543,7 +3551,9 @@ Others:AddButton({
 Others:AddButton({
     Text = 'TP to boat',
     Func = function()
-        teleportToLocation(boatTeleports)
+        do
+            teleportToLocation(boatTeleports)
+        end
     end,
     DoubleClick = false,
     Tooltip = 'Teleports to the boat'
@@ -3552,41 +3562,43 @@ Others:AddButton({
 Others:AddButton({
     Text = 'TP to lowest player server',
     Func = function()
-                local HttpService = game:GetService("HttpService")
-        local TeleportService = game:GetService("TeleportService")
-        local placeId = game.PlaceId
+        do
+            local HttpService = game:GetService("HttpService")
+            local TeleportService = game:GetService("TeleportService")
+            local placeId = game.PlaceId
 
-        local lowestServer = nil
-        local lowestPlayers = math.huge
-        local cursor = ""
+            local lowestServer = nil
+            local lowestPlayers = math.huge
+            local cursor = ""
 
-        repeat
-            local url = string.format(
-                "https://games.roblox.com/v1/games/%d/servers/Public?sortOrder=Asc&limit=100&cursor=%s",
-                placeId, cursor
-            )
+            repeat
+                local url = string.format(
+                    "https://games.roblox.com/v1/games/%d/servers/Public?sortOrder=Asc&limit=100&cursor=%s",
+                    placeId, cursor
+                )
 
-            local success, result = pcall(function()
-                return HttpService:JSONDecode(game:HttpGet(url))
-            end)
+                local success, result = pcall(function()
+                    return HttpService:JSONDecode(game:HttpGet(url))
+                end)
 
-            if not success or not result or not result.data then break end
+                if not success or not result or not result.data then break end
 
-            for _, server in ipairs(result.data) do
-                if server.playing < lowestPlayers and server.playing > 0 then
-                    lowestPlayers = server.playing
-                    lowestServer = server.id
+                for _, server in ipairs(result.data) do
+                    if server.playing < lowestPlayers and server.playing > 0 then
+                        lowestPlayers = server.playing
+                        lowestServer = server.id
+                    end
                 end
+
+                cursor = result.nextPageCursor or ""
+            until cursor == "" or cursor == nil
+
+            if lowestServer then
+                print("[Server Hop] Joining server with " .. lowestPlayers .. " player(s). Job ID: " .. lowestServer)
+                TeleportService:TeleportToPlaceInstance(placeId, lowestServer, game:GetService("Players").LocalPlayer)
+            else
+                print("[Server Hop] No valid server found.")
             end
-
-            cursor = result.nextPageCursor or ""
-        until cursor == "" or cursor == nil
-
-        if lowestServer then
-            print("[Server Hop] Joining server with " .. lowestPlayers .. " player(s). Job ID: " .. lowestServer)
-            TeleportService:TeleportToPlaceInstance(placeId, lowestServer, game:GetService("Players").LocalPlayer)
-        else
-            print("[Server Hop] No valid server found.")
         end
     end,
     DoubleClick = false,
@@ -3610,12 +3622,12 @@ Others:AddToggle('NoGraphics', {
     Default = false,
     Tooltip = 'Disables 3D rendering with a black background',
     Callback = function(Value)
-        game:GetService("RunService"):Set3dRenderingEnabled(not Value)
-        
-        BlackFrame.Visible = Value
+        do
+            game:GetService("RunService"):Set3dRenderingEnabled(not Value)
+            BlackFrame.Visible = Value
+        end
     end
 })
-
 
 local isFPSEnabled = false
 local currentFPSCap = 60 
@@ -3624,13 +3636,14 @@ Others:AddToggle('SetFPS', {
     Text = 'FPS Cap',
     Default = false,
     Tooltip = 'Caps the game FPS at the slider value',
-
     Callback = function(Value)
-        isFPSEnabled = Value
-        if isFPSEnabled then
-            setfpscap(currentFPSCap)
-        else
-            setfpscap(0) 
+        do
+            isFPSEnabled = Value
+            if isFPSEnabled then
+                setfpscap(currentFPSCap)
+            else
+                setfpscap(0) 
+            end
         end
     end
 })
@@ -3642,12 +3655,12 @@ Others:AddSlider('FPSCap', {
     Max = 240,
     Rounding = 1,
     Compact = false,
-
     Callback = function(Value)
-        currentFPSCap = Value
-        
-        if isFPSEnabled then
-            setfpscap(Value)
+        do
+            currentFPSCap = Value
+            if isFPSEnabled then
+                setfpscap(Value)
+            end
         end
     end
 })
