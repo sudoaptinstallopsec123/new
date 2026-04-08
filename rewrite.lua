@@ -2431,6 +2431,199 @@ Ores:AddSlider('Click_Time', {
     end
 })
 
+local Chests = Tabs.Main:AddLeftGroupbox('Chests', 'rabbit')
+
+do
+    local m_CharacterHandler = require(m_References.PlayerScripts.Priority.CharacterHandler)
+    local VirtualUser = game:GetService("VirtualUser")
+    local Camera = workspace.CurrentCamera
+    local UserInputService = game:GetService("UserInputService")
+
+    _G.AutoTreasure = _G.AutoTreasure or { Enabled = false }
+
+    local POLL_INTERVAL = 0.15
+    local EQUIP_COOLDOWN = 0.5
+    local RETRY_ATTEMPTS = 3
+    local RETRY_DELAY = 0.3
+    local DIG_RANGE = 30
+    local DIG_CLICKS = 8
+    local DIG_CLICK_DELAY = 0.1
+
+    local lastEquipTime = 0
+    local isEquipping = false
+
+    local function equipShovel()
+        if isEquipping then return end
+
+        local now = tick()
+        if (now - lastEquipTime) < EQUIP_COOLDOWN then return end
+
+        local ok, err = pcall(function()
+            local shovelSlot = m_Data.GetLocal({ "quickEquipment", "Tool" })
+            if not shovelSlot then
+                warn("[AutoTreasure] Tool slot not found in quickEquipment.")
+                return
+            end
+
+            local equipped = m_Data.GetLocal({ "temporary", "equippedEquipment" })
+
+            if tostring(equipped) ~= tostring(shovelSlot) then
+                isEquipping = true
+                lastEquipTime = tick()
+
+                for attempt = 1, RETRY_ATTEMPTS do
+                    Utilities.Network:FireServer("QuickEquipment", "Use", "Tool")
+                    task.wait(RETRY_DELAY)
+
+                    local nowEquipped = m_Data.GetLocal({ "temporary", "equippedEquipment" })
+                    if tostring(nowEquipped) == tostring(shovelSlot) then
+                        print("[AutoTreasure] Shovel equipped on attempt " .. attempt)
+                        break
+                    end
+                end
+
+                isEquipping = false
+            end
+        end)
+
+        if not ok then
+            isEquipping = false
+            warn("[AutoTreasure] equipShovel error:", err)
+        end
+    end
+
+    local function reequipShovel()
+        do
+            print("[AutoTreasure] Re-equipping shovel...")
+            Utilities.Network:FireServer("Inventory", "Use", m_Data.GetLocal({ "quickEquipment", "Tool" }), "Unequip")
+            task.wait(0.4)
+            isEquipping = false
+            lastEquipTime = 0
+            equipShovel()
+            task.wait(0.4)
+        end
+    end
+
+    local function getTreasurePoint()
+        local success, result = pcall(function()
+            return Utilities.Network:InvokeServer("BuriedTreasure", "GetPoint")
+        end)
+        if success and result then
+            return result
+        end
+        return nil
+    end
+
+    local function teleportTo(point)
+        do
+            local character = LocalPlayer.Character
+            if not character then return end
+            local hrp = character:FindFirstChild("HumanoidRootPart")
+            if hrp then
+                hrp.CFrame = CFrame.new(point + Vector3.new(0, 5, 0))
+                task.wait(0.4)
+            end
+        end
+    end
+
+    local function clickShovel(times)
+        pcall(function()
+            do
+                local viewportSize = Camera.ViewportSize
+                local clickPosition = Vector2.new(viewportSize.X / 2, viewportSize.Y / 2)
+                if not UserInputService:GetFocusedTextBox() then
+                    for i = 1, times do
+                        VirtualUser:ClickButton1(clickPosition, Camera.CFrame)
+                        task.wait(DIG_CLICK_DELAY)
+                    end
+                end
+            end
+        end)
+    end
+
+    task.spawn(function()
+        print("[AutoTreasure] Ready! Set _G.AutoTreasure.Enabled = true to start.")
+
+        while true do
+            task.wait(POLL_INTERVAL)
+
+            if not (_G.AutoTreasure and _G.AutoTreasure.Enabled) then
+                continue
+            end
+
+            do
+                equipShovel()
+                task.wait(0.6)
+
+                local point = nil
+                local attempts = 0
+                local maxAttempts = 10
+
+                while not point and attempts < maxAttempts do
+                    if not (_G.AutoTreasure and _G.AutoTreasure.Enabled) then break end
+
+                    point = getTreasurePoint()
+
+                    if not point then
+                        attempts = attempts + 1
+                        warn("[AutoTreasure] No point yet, re-equipping shovel... attempt " .. attempts)
+                        reequipShovel()
+                        task.wait(0.5)
+                    end
+                end
+
+                if not point then
+                    warn("[AutoTreasure] Could not get treasure point after " .. maxAttempts .. " attempts, retrying...")
+                    task.wait(1)
+                    continue
+                end
+
+                print("[AutoTreasure] Treasure at:", point)
+
+                teleportTo(point)
+
+                local inRange = m_CharacterHandler.object:InRange(point, DIG_RANGE)
+                if not inRange then
+                    warn("[AutoTreasure] Not in range, teleporting again...")
+                    teleportTo(point)
+                end
+
+                reequipShovel()
+                reequipShovel()
+                task.wait(0.3)
+
+                print("[AutoTreasure] Digging...")
+                clickShovel(DIG_CLICKS)
+                task.wait(1.5)
+
+                reequipShovel()
+                task.wait(1)
+            end
+        end
+    end)
+
+    LocalPlayer.CharacterAdded:Connect(function()
+        do
+            task.wait(1.5)
+            isEquipping = false
+            lastEquipTime = 0
+            if _G.AutoTreasure and _G.AutoTreasure.Enabled then
+                equipShovel()
+            end
+        end
+    end)
+end
+
+Chests:AddToggle('EnableAutoChest', {
+    Text = 'Enable',
+    Default = false,
+    Tooltip = 'Enables Auto Chest',
+    Callback = function(Value)
+        do
+            _G.AutoTreasure.Enabled = Value
+        end
+    end
+})
 local Webhookstuff = Tabs.Main:AddRightGroupbox('Webhook', 'mail')
 
 Webhookstuff:AddToggle('Webhook_Enable', {
