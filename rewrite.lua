@@ -2467,7 +2467,6 @@ do
         local ok, err = pcall(function()
             local shovelSlot = m_Data.GetLocal({ "quickEquipment", "Tool" })
             if not shovelSlot then
-                warn("[AutoTreasure] Tool slot not found in quickEquipment.")
                 return
             end
 
@@ -2483,7 +2482,6 @@ do
 
                     local nowEquipped = m_Data.GetLocal({ "temporary", "equippedEquipment" })
                     if tostring(nowEquipped) == tostring(shovelSlot) then
-                        print("[AutoTreasure] Shovel equipped on attempt " .. attempt)
                         break
                     end
                 end
@@ -2500,7 +2498,6 @@ do
 
     local function reequipShovel()
         do
-            print("[AutoTreasure] Re-equipping shovel...")
             Utilities.Network:FireServer("Inventory", "Use", m_Data.GetLocal({ "quickEquipment", "Tool" }), "Unequip")
             task.wait(0.4)
             isEquipping = false
@@ -2548,7 +2545,6 @@ do
     end
 
     task.spawn(function()
-        print("[AutoTreasure] Ready! Set _G.AutoTreasure.Enabled = true to start.")
 
         while true do
             task.wait(POLL_INTERVAL)
@@ -2572,14 +2568,12 @@ do
 
                     if not point then
                         attempts = attempts + 1
-                        warn("[AutoTreasure] No point yet, re-equipping shovel... attempt " .. attempts)
                         reequipShovel()
                         task.wait(0.5)
                     end
                 end
 
                 if not point then
-                    warn("[AutoTreasure] Could not get treasure point after " .. maxAttempts .. " attempts, retrying...")
                     task.wait(1)
                     continue
                 end
@@ -2590,7 +2584,6 @@ do
 
                 local inRange = m_CharacterHandler.object:InRange(point, DIG_RANGE)
                 if not inRange then
-                    warn("[AutoTreasure] Not in range, teleporting again...")
                     teleportTo(point)
                 end
 
@@ -2598,7 +2591,6 @@ do
                 reequipShovel()
                 task.wait(0.3)
 
-                print("[AutoTreasure] Digging...")
                 clickShovel(DIG_CLICKS)
                 task.wait(1.5)
 
