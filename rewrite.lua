@@ -1862,6 +1862,7 @@ local horseselloptions = LeftGroupBox:AddDropdown('HorsestoLock', {
 
 local RightIslandsGroupBox = Tabs.Main:AddRightGroupbox('Island settings', 'settings')
 
+do
 local islandDropdown = RightIslandsGroupBox:AddDropdown('Island_Select', {
     Text     = 'Select Island',
     Values   = AVAILABLE_ISLANDS,
@@ -1901,9 +1902,10 @@ RightIslandsGroupBox:AddDropdown('Farm_Islands', {
         end
     end
 })
+end
 
 local RightGroupBox = Tabs.Main:AddRightGroupbox('Training', 'award')
-
+do
 local RunService = game:GetService("RunService")
 local Players = game:GetService("Players")
 local VirtualInputManager = game:GetService("VirtualInputManager")
@@ -1942,6 +1944,7 @@ RightGroupBox:AddToggle('Autotrain_Enable', {
         IS_ENABLED = Value
     end
 })
+end
 
 local Ores = Tabs.Main:AddLeftGroupbox('Ores', 'pickaxe')
 
@@ -2286,6 +2289,8 @@ player.Idled:Connect(function()
     virtualUser:Button2Up(Vector2.new(0, 0), workspace.CurrentCamera.CFrame)
 end)
 
+do
+
 Ores:AddToggle('OreAuto_Enable', {
     Text = 'Enable',
     Default = false,
@@ -2430,6 +2435,7 @@ Ores:AddSlider('Click_Time', {
         CLICK_COOLDOWN = Value / 1000  -- convert ms to seconds
     end
 })
+end
 
 local Chests = Tabs.Main:AddLeftGroupbox('Chests', 'rabbit')
 
@@ -2726,7 +2732,7 @@ Webhookstuff:AddButton({
 })
 
 local ESP = Tabs.Visuals:AddLeftGroupbox('Visuals', 'eye')
-
+do
 -- ============================================================
 --  GRADIENT SETTINGS
 -- ============================================================
@@ -2998,6 +3004,7 @@ ESP:AddSlider('ESP_MaxDistance', {
         ESP_CONFIG.MaxDistance = Value
     end
 })
+end
 
 local CharacterVisuals = Tabs.Visuals:AddRightGroupbox('Character', 'user')
 do
