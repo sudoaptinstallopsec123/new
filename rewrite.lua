@@ -1481,6 +1481,7 @@ local LOCK_INDICATOR_OPTIONS = {
     "specialIslandUniqueCoat",
     "specialCoat",
     "specialHair",
+    "horned", 
     "rareCoat",
 }
 
@@ -2277,6 +2278,7 @@ task.spawn(function()
     end
 end)
 
+
 -- Anti-AFK LocalScript
 -- Place inside StarterPlayerScripts
 
@@ -2492,7 +2494,7 @@ do
 
         if not ok then
             isEquipping = false
-            warn("[AutoTreasure] equipShovel error:", err)
+            warn("[autotreasure] equip shovel error:", err)
         end
     end
 
