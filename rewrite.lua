@@ -6,6 +6,10 @@ local Players = game:GetService("Players")
 local player = Players.LocalPlayer
 local TweenService     = game:GetService("TweenService")
 
+loadstring([[
+    function LPH_NO_VIRTUALIZE(f) return f end;
+]])();
+
 
 local autofarm_enabled = false
 local autoclick_enabled = false
@@ -2632,6 +2636,146 @@ Chests:AddToggle('EnableAutoChest', {
         end
     end
 })
+
+local FishingStuff = Tabs.Main:AddLeftGroupbox('Fishing', 'fish')
+ 
+local autofish = false -- Outside do...end so the toggle can access it
+ 
+do
+local Players = game:GetService("Players")
+local VirtualInputManager = game:GetService("VirtualInputManager")
+ 
+local player = Players.LocalPlayer
+local mouse = player:GetMouse()
+ 
+-- Island teleport CFrames
+local islandCFrames = {
+    ["Mainland"]        = CFrame.new(20.263, 192.971, 577.279, -0.408069, 0.000000, -0.912951, 0.000000, 1.000000, 0.000000, 0.912951, 0.000000, -0.408069),
+    ["Forest Island"]   = CFrame.new(-7839.120, 18.228, 3625.258, 0.135307, -0.000000, -0.990804, 0.000000, 1.000000, -0.000000, 0.990804, 0.000000, 0.135307),
+    ["Royal Island"]    = CFrame.new(805.746, 14.314, -4853.881, -0.959314, 0.000000, 0.282340, 0.000000, 1.000000, -0.000000, -0.282340, -0.000000, -0.959314),
+    ["Desert Island"]   = CFrame.new(827.530, 14.676, 3329.438, 0.980181, -0.000000, 0.198105, 0.000000, 1.000000, 0.000000, -0.198105, -0.000000, 0.980181),
+    ["Mountain Island"] = CFrame.new(-7460.679, 8.006, 187.603, 0.473657, -0.000000, 0.880709, -0.000000, 1.000000, 0.000000, -0.880709, -0.000000, 0.473657),
+    ["Jungle Island"]   = CFrame.new(2463.821, 12.124, 1976.381, 0.028443, -0.000000, 0.999595, -0.000000, 1.000000, 0.000000, -0.999595, -0.000000, 0.028443),
+    ["Lunar Islands"]   = CFrame.new(-3559.739, 15.229, -1953.371, 0.029027, 0.000000, -0.999579, 0.000000, 1.000000, 0.000000, 0.999579, -0.000000, 0.029027),
+    ["Volcano Island"]  = CFrame.new(3756.582, 534.618, -7942.238, -0.200334, 0.000000, 0.979728, -0.000000, 1.000000, -0.000000, -0.979728, -0.000000, -0.200334),
+}
+ 
+-- Island click positions
+local islandClickPos = {
+    ["Mainland"]        = UDim2.new(0, 958, 0, 333),
+    ["Forest Island"]   = UDim2.new(0, 960, 0, 450),
+    ["Royal Island"]    = UDim2.new(0, 960, 0, 450),
+    ["Desert Island"]   = UDim2.new(0, 960, 0, 450),
+    ["Mountain Island"] = UDim2.new(0, 960, 0, 450),
+    ["Jungle Island"]   = UDim2.new(0, 947, 0, 308),
+    ["Lunar Islands"]   = UDim2.new(0, 962, 0, 297),
+    ["Volcano Island"]  = UDim2.new(0, 954, 0, 298),
+}
+ 
+local function getCurrentIsland()
+    local islandsFolder = workspace:FindFirstChild("Islands")
+    if not islandsFolder then return nil end
+ 
+    for _, island in ipairs(islandsFolder:GetChildren()) do
+        if island:FindFirstChild(player.Name) then
+            return island
+        end
+    end
+    return nil
+end
+ 
+-- Wrapped in LPH_NO_VIRTUALIZE as they are called inside the loop
+local teleportToIsland = LPH_NO_VIRTUALIZE(function(islandName)
+    local cf = islandCFrames[islandName]
+    if cf and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+        player.Character.HumanoidRootPart.CFrame = cf
+    end
+end)
+ 
+local clickAtPosition = LPH_NO_VIRTUALIZE(function(udim2)
+    local x = udim2.X.Offset
+    local y = udim2.Y.Offset
+    VirtualInputManager:SendMouseButtonEvent(x, y, 0, true, game, 1)
+    task.wait(0.1)
+    VirtualInputManager:SendMouseButtonEvent(x, y, 0, false, game, 1)
+end)
+ 
+-- Main autofish loop
+task.spawn(LPH_NO_VIRTUALIZE(function()
+    while task.wait(1) do
+        if not autofish then continue end
+ 
+        local island = getCurrentIsland()
+        if not island then continue end
+ 
+        local islandName = island.Name
+        local cf = islandCFrames[islandName]
+        local clickPos = islandClickPos[islandName]
+ 
+        if not cf or not clickPos then
+            print("No autofish data for island: " .. islandName)
+            continue
+        end
+ 
+        teleportToIsland(islandName)
+        task.wait(0.5)
+ 
+        clickAtPosition(clickPos)
+    end
+end))
+end
+
+-- Auto Fishing Rod
+_G.AutoFishingRod = _G.AutoFishingRod or { Enabled = false }
+
+do
+    local equipFishingRod = LPH_NO_VIRTUALIZE(function()
+        local ok, err = pcall(function()
+            if not (_G.AutoFishingRod and _G.AutoFishingRod.Enabled) then return end
+            local toolSlot = m_Data.GetLocal({ "quickEquipment", "Tool" })
+            if not toolSlot then return end
+            local equipped = m_Data.GetLocal({ "temporary", "equippedEquipment" })
+            if equipped ~= toolSlot then
+                Utilities.Network:FireServer("QuickEquipment", "Use", "Tool")
+            end
+        end)
+        if not ok then
+            warn("[AutoFishingRod] Error:", err)
+        end
+    end)
+
+    task.spawn(LPH_NO_VIRTUALIZE(function()
+        while true do
+            task.wait(0.1)
+            equipFishingRod()
+        end
+    end))
+
+    LocalPlayer.CharacterAdded:Connect(function()
+        task.wait(1.5)
+        equipFishingRod()
+    end)
+end
+ 
+FishingStuff:AddToggle('EnableAutoFish', {
+    Text = 'Enable',
+    Default = false,
+    Tooltip = 'Enables Auto Fish',
+    Callback = function(Value)
+        autofish = Value
+    end
+})
+
+FishingStuff:AddToggle('EnableAutoFishingRod', {
+    Text = 'Auto Fishing Rod',
+    Default = true,
+    Tooltip = 'Equips fishing rod',
+    Callback = function(Value)
+        _G.AutoFishingRod.Enabled = Value
+    end
+})
+
+
 local Webhookstuff = Tabs.Main:AddRightGroupbox('Webhook', 'mail')
 
 Webhookstuff:AddToggle('Webhook_Enable', {
