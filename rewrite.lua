@@ -2768,7 +2768,7 @@ FishingStuff:AddToggle('EnableAutoFish', {
 
 FishingStuff:AddToggle('EnableAutoFishingRod', {
     Text = 'Auto Fishing Rod',
-    Default = true,
+    Default = false,
     Tooltip = 'Equips fishing rod',
     Callback = function(Value)
         _G.AutoFishingRod.Enabled = Value
