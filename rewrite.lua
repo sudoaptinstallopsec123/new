@@ -1487,6 +1487,7 @@ local LOCK_INDICATOR_OPTIONS = {
     "specialIslandUniqueCoat",
     "specialCoat",
     "specialHair",
+    "spring2026",
     "horned", 
     "rareCoat",
 }
@@ -1687,6 +1688,13 @@ local function shouldLockHorse(itemData)
     if not itemData then return false, nil end
     local variants = itemData.variants
     if not variants then return false, nil end
+
+        -- Dedicated horn check (runs regardless of coat)
+    if LOCK_INDICATORS["horned"] == true then
+        if variants.horn and variants.horn ~= "" then
+            return true, "horned"
+        end
+    end
 
     if variants.colour then
         local coatEntry = HorseVariants.colour[variants.colour]
@@ -3515,7 +3523,7 @@ local Button = Redeeming:AddButton({
         end
     end,
     DoubleClick = false,
-    Tooltip = 'Executes dex'
+    Tooltip = 'Redeems VM'
 })
 
 local counter = 0
@@ -3543,7 +3551,7 @@ local Button = Redeeming:AddButton({
         invokeServer("Trade", "trainingReceipts")
     end,
     DoubleClick = false,
-    Tooltip = 'Executes dex'
+    Tooltip = 'Redeems Training Receipts'
 })
 
 local Button = Redeeming:AddButton({
@@ -3552,7 +3560,7 @@ local Button = Redeeming:AddButton({
         invokeServer("Trade", "goldenAppleBasket")
     end,
     DoubleClick = false,
-    Tooltip = 'Executes dex'
+    Tooltip = 'Redeems Apples'
 })
 
 local Button = Redeeming:AddButton({
@@ -3561,7 +3569,7 @@ local Button = Redeeming:AddButton({
         invokeServer("Trade", "archaeology")
     end,
     DoubleClick = false,
-    Tooltip = 'Executes dex'
+    Tooltip = 'Redeems Relics'
 })
 
 -- ============================================================
