@@ -368,6 +368,10 @@ local HOVER_HEIGHT      = 3
 local IDLE_LIMIT        = 40
 local AUTOCLICK_RATE    = 0.1
 
+local CATCHES_BEFORE_WAIT = 1        -- how many horses to catch before pausing
+local WAIT_AFTER_CATCHES  = 30        -- seconds to wait after catching that many horses
+local AUTOCLICK_DURING_WAIT = false
+
 -- ============================================================
 --  SERVICES
 -- ============================================================
@@ -611,6 +615,9 @@ task.spawn(function()
     local noHorseTime       = 0
     local STILL_TRAVEL_TIME = 40
 
+    local catchCount        = 0      -- how many horses caught this cycle
+    local isWaiting         = false  -- currently in post-catch wait
+
     local function disconnectFollow()
         if followConn then
             followConn:Disconnect()
@@ -649,6 +656,13 @@ task.spawn(function()
         randomTeleport(root, island)
     end
 
+    -- Watches a locked horse and detects when it disappears (i.e. caught/despawned)
+    local function waitForHorseCaught(horseRoot)
+        while horseRoot and horseRoot.Parent do
+            task.wait(0.2)
+        end
+    end
+
     while true do
         task.wait(0.4)
 
@@ -657,10 +671,15 @@ task.spawn(function()
             lockedHorse = nil
             idleTime    = 0
             noHorseTime = 0
+            catchCount  = 0
+            isWaiting   = false
             continue
         end
 
         if isTravelling then continue end
+
+        -- ── Post-catch wait phase ──
+        if isWaiting then continue end
 
         local character = player.Character
         local root = character and character:FindFirstChild("HumanoidRootPart")
@@ -669,19 +688,39 @@ task.spawn(function()
         local island = getCurrentIsland()
         if not island then continue end
 
-        -- ── If current island isn't in the farm list, travel away ──
         if autotravel_enabled and not autofarm_islands[island.Name] then
             local next = getNextFarmIsland(island.Name)
-            if next then
-                safeTravelTo(next)
-            end
+            if next then safeTravelTo(next) end
             continue
         end
 
         -- ── Clear dead horse reference ──
         if lockedHorse and not lockedHorse.Parent then
+            -- Horse disappeared = caught
             disconnectFollow()
-            lockedHorse = nil
+            catchCount  += 1
+            lockedHorse  = nil
+
+            print("[AutoFarm] Horse caught! Total this cycle: " .. catchCount)
+
+            if catchCount >= CATCHES_BEFORE_WAIT then
+                isWaiting  = true
+                catchCount = 0
+                print("[AutoFarm] Catch limit reached, waiting " .. WAIT_AFTER_CATCHES .. "s...")
+
+                -- Suspend autoclicking during wait if configured
+                local prevAutoclick = autoclick_enabled
+                if not AUTOCLICK_DURING_WAIT then
+                    autoclick_enabled = false
+                end
+
+                task.delay(WAIT_AFTER_CATCHES, function()
+                    autoclick_enabled = prevAutoclick
+                    isWaiting = false
+                    print("[AutoFarm] Wait over, resuming.")
+                end)
+                continue
+            end
         end
 
         -- ── Scan for nearest horse if we don't have one ──
@@ -690,7 +729,6 @@ task.spawn(function()
         end
 
         if lockedHorse then
-            -- Actively farming, reset timers
             idleTime    = 0
             noHorseTime = 0
 
@@ -698,7 +736,6 @@ task.spawn(function()
                 followConn = RunService.Heartbeat:Connect(function()
                     if not lockedHorse or not lockedHorse.Parent then
                         disconnectFollow()
-                        lockedHorse = nil
                         return
                     end
                     root.CFrame = lockedHorse.CFrame * CFrame.new(0, HOVER_HEIGHT, 0)
@@ -706,12 +743,10 @@ task.spawn(function()
             end
 
         else
-            -- No horse found
             disconnectFollow()
             idleTime    += 1
             noHorseTime += 0.4
 
-            -- ── No horses for long enough → switch island ──
             if autotravel_enabled and noHorseTime >= STILL_TRAVEL_TIME then
                 local next = getNextFarmIsland(island.Name)
                 if next and next ~= island.Name then
@@ -725,7 +760,6 @@ task.spawn(function()
                 continue
             end
 
-            -- ── Idle limit hit, random teleport within current island ──
             if idleTime >= (tonumber(idle_limit) or IDLE_LIMIT) then
                 safeRandomTeleport(root)
                 idleTime = 0
@@ -733,7 +767,6 @@ task.spawn(function()
         end
     end
 end)
-
 
 local runService   = game:GetService("RunService")
 local players      = game:GetService("Players")
@@ -1858,6 +1891,32 @@ LeftGroupBox:AddSlider('Idle_Limit', {
 
     Callback = function(Value)
         IDLE_LIMIT = Value
+    end
+})
+
+LeftGroupBox:AddSlider('CatchAmount', {
+    Text = 'Catch amount',
+    Default = 1,
+    Min = 0,
+    Max = 10,
+    Rounding = 0,  -- Changed from 0.1 to 1 so it always returns whole numbers
+    Compact = false,
+
+    Callback = function(Value)
+        CATCHES_BEFORE_WAIT = Value
+    end
+})
+
+LeftGroupBox:AddSlider('waittimeforcatch', {
+    Text = 'Wait time after catch',
+    Default = 30,
+    Min = 20,
+    Max = 60,
+    Rounding = 0,  -- Changed from 0.1 to 1 so it always returns whole numbers
+    Compact = false,
+
+    Callback = function(Value)
+        WAIT_AFTER_CATCHES = Value
     end
 })
 
