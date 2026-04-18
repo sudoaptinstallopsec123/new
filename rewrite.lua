@@ -1469,6 +1469,66 @@ LeftGroupBox:AddToggle('AutoLasso_Enable', {
     end
 })
 
+local BYPASS_COOLDOWN = true -- change to false to disable
+
+do
+    local Modules = getloadedmodules()
+    local Cooldown = nil
+
+    for _, Value in Modules do
+        if not Value or Value.ClassName ~= "ModuleScript" then continue end
+        if Value.Name == "Cooldown" then
+            Cooldown = require(Value)
+            break
+        end
+    end
+
+    if not Cooldown then
+        warn("Cooldown not found")
+        return
+    end
+
+    local internalTable = nil
+    for i = 1, 10 do
+        local val = debug.getupvalue(Cooldown.Set, i)
+        if type(val) == "table" then
+            internalTable = val
+            break
+        end
+    end
+
+    if not internalTable then
+        warn("Could not find internal table")
+        return
+    end
+
+    local LocalPlayer = game:GetService("Players").LocalPlayer
+
+    task.spawn(function()
+        while true do
+            task.wait(0.05)
+            if BYPASS_COOLDOWN then
+                pcall(function()
+                    if internalTable[LocalPlayer] then
+                        internalTable[LocalPlayer]["activateEquipment"] = 0
+                    end
+                end)
+            end
+        end
+    end)
+
+end
+
+LeftGroupBox:AddToggle('FastLasso', {
+    Text = 'Fast Lasso',
+    Default = false,
+    Tooltip = 'Enables Fast Lasso (WIP)',
+
+    Callback = function(Value)
+        BYPASS_COOLDOWN = Value  -- also fixed: was setting autosell_enabled directly, bypassing toggleAutosell
+    end
+})
+
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local HttpService       = game:GetService("HttpService")
 local HorseVariants     = require(ReplicatedStorage.References.HorseVariants)
@@ -1722,9 +1782,17 @@ local function shouldLockHorse(itemData)
     local variants = itemData.variants
     if not variants then return false, nil end
 
-        -- Dedicated horn check (runs regardless of coat)
-    if LOCK_INDICATORS["horned"] == true then
-        if variants.horn and variants.horn ~= "" then
+    -- Horn check
+    if variants.horn and variants.horn ~= "" then
+        local hornEntry = HorseVariants.horn and HorseVariants.horn[variants.horn]
+        if hornEntry then
+            local indicator = hornEntry.specialItemIndicator
+            if indicator and LOCK_INDICATORS[indicator] then
+                return true, indicator
+            end
+        end
+        -- catch-all for any horn
+        if LOCK_INDICATORS["horned"] then
             return true, "horned"
         end
     end
@@ -1735,6 +1803,11 @@ local function shouldLockHorse(itemData)
             local indicator = coatEntry.specialItemIndicator
             if indicator and LOCK_INDICATORS[indicator] == true then
                 return true, indicator
+            end
+            -- spring2026 coat check
+            if LOCK_INDICATORS["spring2026"] == true and
+               (variants.colour == "darkTigerSwallowtail" or variants.colour == "tigerSwallowtail") then
+                return true, "spring2026"
             end
             if LOCK_INDICATORS["rareCoat"] == true
             and (coatEntry.rarityFloat or 0) >= RARE_THRESHOLD then
@@ -1780,6 +1853,7 @@ local function shouldLockHorse(itemData)
 
     return false, nil
 end
+
 
 -- ════════════════════════════════════════════════════════════════════════════
 --  MODULE ACQUISITION
@@ -1867,7 +1941,6 @@ LeftGroupBox:AddSlider('Autoclick_Duration', {
     end
 })
 
-
 LeftGroupBox:AddSlider('Hover_Height', {
     Text = 'Hover Height',
     Default = 6,
@@ -1910,7 +1983,7 @@ LeftGroupBox:AddSlider('CatchAmount', {
 LeftGroupBox:AddSlider('waittimeforcatch', {
     Text = 'Wait time after catch',
     Default = 30,
-    Min = 20,
+    Min = 0,
     Max = 60,
     Rounding = 0,  -- Changed from 0.1 to 1 so it always returns whole numbers
     Compact = false,
@@ -1976,6 +2049,19 @@ RightIslandsGroupBox:AddDropdown('Farm_Islands', {
         end
     end
 })
+
+RightIslandsGroupBox:AddSlider('IslandTravelTime', {
+    Text = 'Travel Delay',
+    Default = 40,
+    Min = 10,
+    Max = 100,
+    Rounding = 0,
+
+    Callback = function(Value)
+        STILL_TRAVEL_TIME = Value
+    end
+})
+
 end
 
 local RightGroupBox = Tabs.Main:AddRightGroupbox('Training', 'award')
@@ -3534,7 +3620,7 @@ do
         Text = "Craft Amount",
         Default = 10,
         Min = 1,
-        Max = 1000,
+        Max = 250,
         Rounding = 0,
         Callback = function(Value)
             craftAmount = Value
