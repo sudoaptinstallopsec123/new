@@ -878,32 +878,73 @@ function esp:ImplementPlayerESP(showLocal)
         esp:ImplementCharacterClass()
     end
 
-    local function onPlayerAdded(player)
-        local obj
-
-        local function onCharAdded(char)
-            if obj then obj:destroy() end
-            char:WaitForChild("Humanoid", 10)
-            char:WaitForChild("Head", 10)
-            obj = esp:Create("character", char)
+    local function onCharAdded(player, char)
+        -- destroy old object if exists
+        if esp.Objects[char] then
+            pcall(function() esp.Objects[char]:destroy() end)
+            esp.Objects[char] = nil
         end
+
+        task.spawn(function()
+            -- wait for ALL essential parts
+            if not char:WaitForChild("Humanoid", 15) then return end
+            if not char:WaitForChild("Head", 15) then return end
+            if not char:WaitForChild("HumanoidRootPart", 15) then return end
+
+            -- wait until character is actually parented in workspace
+            local attempts = 0
+            repeat
+                task.wait(0.1)
+                attempts = attempts + 1
+            until char.Parent ~= nil or attempts > 30
+
+            if not char.Parent then return end
+
+            -- make sure we have body parts
+            local partCount = 0
+            for _, v in char:GetDescendants() do
+                if v:IsA("BasePart") then
+                    partCount = partCount + 1
+                end
+            end
+
+            if partCount == 0 then
+                task.wait(0.5)
+            end
+
+            esp:Create("character", char)
+        end)
+    end
+
+    local function onPlayerAdded(player)
+        if not showLocal and player == LocalPlayer then return end
+
+        table.insert(esp.Connections, player.CharacterAdded:Connect(function(char)
+            onCharAdded(player, char)
+        end))
+
+        table.insert(esp.Connections, player.CharacterRemoving:Connect(function(char)
+            if esp.Objects[char] then
+                pcall(function() esp.Objects[char]:destroy() end)
+                esp.Objects[char] = nil
+            end
+        end))
 
         if player.Character then
-            task.spawn(onCharAdded, player.Character)
+            onCharAdded(player, player.Character)
         end
-
-        table.insert(esp.Connections, player.CharacterAdded:Connect(onCharAdded))
-        table.insert(esp.Connections, player.CharacterRemoving:Connect(function()
-            if obj then obj:destroy() obj = nil end
-        end))
     end
 
-    for _, p in Players:GetPlayers() do
-        if not showLocal and p == LocalPlayer then continue end
+for _, p in Players:GetPlayers() do
         task.spawn(onPlayerAdded, p)
     end
-    table.insert(esp.Connections, Players.PlayerAdded:Connect(onPlayerAdded))
+
+    table.insert(esp.Connections, Players.PlayerAdded:Connect(function(p)
+        task.spawn(onPlayerAdded, p)
+    end))
 end
+
+
 
 function esp:Destroy()
     for _, c in esp.Connections do c:Disconnect() end
@@ -933,3 +974,11 @@ task.defer(function()
 end)
 
 return esp
+
+task.wait(2)
+print("Total players:", #Players:GetPlayers())
+print("Total ESP objects:", (function() local c = 0 for _ in pairs(esp.Objects) do c = c + 1 end return c end)())
+for _, p in Players:GetPlayers() do
+    if p == Players.LocalPlayer then continue end
+    print(p.Name, "char:", p.Character ~= nil, "esp:", esp.Objects[p.Character] ~= nil)
+end
