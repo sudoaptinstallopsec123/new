@@ -973,12 +973,14 @@ task.defer(function()
     esp:ImplementPlayerESP(false)
 end)
 
-return esp
+task.spawn(function()
+    task.wait(2)
+    print("Total players:", #Players:GetPlayers())
+    print("Total ESP objects:", (function() local c = 0 for _ in pairs(esp.Objects) do c = c + 1 end return c end)())
+    for _, p in Players:GetPlayers() do
+        if p == Players.LocalPlayer then continue end
+        print(p.Name, "char:", p.Character ~= nil, "esp:", esp.Objects[p.Character] ~= nil)
+    end
+end)
 
-task.wait(2)
-print("Total players:", #Players:GetPlayers())
-print("Total ESP objects:", (function() local c = 0 for _ in pairs(esp.Objects) do c = c + 1 end return c end)())
-for _, p in Players:GetPlayers() do
-    if p == Players.LocalPlayer then continue end
-    print(p.Name, "char:", p.Character ~= nil, "esp:", esp.Objects[p.Character] ~= nil)
-end
+return esp
