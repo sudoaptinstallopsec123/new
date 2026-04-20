@@ -48,6 +48,11 @@ local esp = {
             UseTeamColors = false,
         },
 
+        InvisCheck = {
+            Enabled = false,
+        },
+
+
         Box = {
             Enabled = true,
             Style = "Dynamic",
@@ -637,6 +642,34 @@ function esp:ImplementCharacterClass()
                 obj.holder.Visible = false
                 return false
             end
+
+            if esp.Configuration.InvisCheck.Enabled then
+            local function isInvisible(character)
+                local torso = character:FindFirstChild("UpperTorso") or character:FindFirstChild("Torso")
+                if torso and torso.Transparency >= 0.99 then
+                    return true
+                end
+                local totalParts = 0
+                local invisParts = 0
+                for _, part in obj.cachedParts do
+                    if part.Name ~= "HumanoidRootPart" then
+                        totalParts = totalParts + 1
+                        if part.Transparency >= 0.99 then
+                            invisParts = invisParts + 1
+                        end
+                    end
+                end
+                if totalParts > 0 and (invisParts / totalParts) >= 0.75 then
+                    return true
+                end
+                return false
+            end
+        
+            if isInvisible(obj.model) then
+                obj.holder.Visible = false
+                return false
+            end
+        end
 
             local position, size = boxCfg.GetStyle(boxCfg.Style, obj.cachedParts, camera)
             if not position or not size then
