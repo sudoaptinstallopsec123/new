@@ -446,26 +446,27 @@ function esp:ImplementCharacterClass()
             end
 
             local boxOutline, boxBorder
-            if outCfg.Enabled then
-                boxOutline = Instance.new("UIStroke", box)
-                boxOutline.Name         = "outline"
-                boxOutline.Thickness    = outCfg.Thickness
-                boxOutline.Color        = outCfg.Color
-                boxOutline.LineJoinMode = Enum.LineJoinMode.Miter
-                boxOutline.ZIndex       = 2
+            local boxOutline = Instance.new("UIStroke", box)
+            boxOutline.Name         = "outline"
+            boxOutline.Thickness    = outCfg.Thickness
+            boxOutline.Color        = outCfg.Color
+            boxOutline.LineJoinMode = Enum.LineJoinMode.Miter
+            boxOutline.ZIndex       = 2
+            boxOutline.Enabled      = false
 
-                boxBorder = Instance.new("UIStroke", box)
-                boxBorder.Name         = "border"
-                boxBorder.Color        = Color3.new(0, 0, 0)
-                boxBorder.Thickness    = 3
-                boxBorder.LineJoinMode = Enum.LineJoinMode.Miter
-                boxBorder.ZIndex       = 1
-                boxBorder.BorderOffset = UDim.new(0, -1)
-            end
+            local boxBorder = Instance.new("UIStroke", box)
+            boxBorder.Name         = "border"
+            boxBorder.Color        = Color3.new(0, 0, 0)
+            boxBorder.Thickness    = 3
+            boxBorder.LineJoinMode = Enum.LineJoinMode.Miter
+            boxBorder.ZIndex       = 1
+            boxBorder.BorderOffset = UDim.new(0, -1)
+            boxBorder.Enabled      = false
+
 
             local cornerFrames = {}
             if outCfg.Enabled then
-                cornerFrames = buildCorners(holder, outCfg.Thickness, outCfg.CornerLength, outCfg.Color, Color3.new(0,0,0))
+                local cornerFrames = buildCorners(holder, outCfg.Thickness, outCfg.CornerLength, outCfg.Color, Color3.new(0,0,0))
                 for _, f in cornerFrames do f.Visible = false end
             end
 
