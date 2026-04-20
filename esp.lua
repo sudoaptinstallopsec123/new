@@ -928,6 +928,8 @@ table.insert(esp.Connections, RunService.Heartbeat:Connect(IB_NO_VIRTUALIZE(func
     end
 end)))
 
-esp:ImplementPlayerESP(false)
+task.defer(function()
+    esp:ImplementPlayerESP(false)
+end)
 
 return esp
