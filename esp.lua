@@ -49,6 +49,7 @@ local esp = {
         },
 
         Box = {
+            Enabled = true,
             Style = "Dynamic",
             Type  = "Full",
 
@@ -672,6 +673,7 @@ function esp:ImplementCharacterClass()
                 obj.glow.Visible = glowCfg.Enabled
             end
 
+            print("Box.Enabled:", boxCfg.Enabled, "Outline.Enabled:", outCfg.Enabled, "Type:", boxCfg.Type)
             local isCorners = outCfg.Enabled and boxCfg.Type == "Corners"
             local isFull    = outCfg.Enabled and boxCfg.Type == "Full"
             if obj.boxOutline then
