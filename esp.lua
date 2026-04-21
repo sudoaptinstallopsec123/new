@@ -54,7 +54,7 @@ local esp = {
 
 
         Box = {
-            Enabled = true,
+            Enabled = false,
             Style = "Dynamic",
             Type  = "Full",
 
@@ -629,9 +629,8 @@ function esp:ImplementCharacterClass()
                 return true
             end
 
-            local player = Players:GetPlayerFromCharacter(obj.model)
             if teamCfg.Enabled and player and player ~= LocalPlayer then
-                if LocalPlayer.Team ~= nil and player.Team == LocalPlayer.Team then
+                if player.Team ~= nil and player.Team == LocalPlayer.Team then
                     obj.holder.Visible = false
                     return false
                 end
@@ -688,6 +687,17 @@ function esp:ImplementCharacterClass()
                 if teamCfg.UseTeamColors and player and player.Team then
                     teamColor = player.TeamColor.Color
                 end
+                
+                if obj.boxOutline then
+                    obj.boxOutline.Color = teamColor or outCfg.Color
+                    obj.boxBorder.Color  = Color3.new(0, 0, 0)
+                end
+                
+                if teamCfg.UseTeamColors then
+                    esp.Configuration.Name.Color     = teamColor or Color3.fromRGB(255, 255, 255)
+                    esp.Configuration.Distance.Color = teamColor or Color3.fromRGB(235, 235, 235)
+                end
+
 
                 if obj.boxGradient and fillCfg.Enabled and fillCfg.Gradient.Enabled then
                     local c1 = teamColor or fillCfg.Gradient.Color[1]
@@ -747,7 +757,7 @@ function esp:ImplementCharacterClass()
                     elseif pos == "Top" then
                         obj.hbHolder.AnchorPoint = Vector2.new(0, 1)
                         obj.hbHolder.Position    = UDim2.new(0, 0, 0, -gap)
-                        obj.hbHolder.Size        = UDim2.new(1, 0, 0, 4)
+                        obj.hbHolder.Size        = UDim2.new(1, 0, 0, 4)  -- matches box width exactly
                         obj.hbFill.AnchorPoint   = Vector2.new(0, 0)
                         obj.hbFill.Position      = UDim2.new(0, 0, 0, 0)
                         obj.hbFill.Size          = UDim2.new(pct, 0, 1, 0)
@@ -755,12 +765,12 @@ function esp:ImplementCharacterClass()
                     elseif pos == "Bottom" then
                         obj.hbHolder.AnchorPoint = Vector2.new(0, 0)
                         obj.hbHolder.Position    = UDim2.new(0, 0, 1, gap)
-                        obj.hbHolder.Size        = UDim2.new(1, 0, 0, 4)
+                        obj.hbHolder.Size        = UDim2.new(1, 0, 0, 4)  -- matches box width exactly
                         obj.hbFill.AnchorPoint   = Vector2.new(0, 0)
                         obj.hbFill.Position      = UDim2.new(0, 0, 0, 0)
                         obj.hbFill.Size          = UDim2.new(pct, 0, 1, 0)
                         obj.hbGradient.Rotation  = 0
-                    end
+
 
                     if hbCfg.Animated then
                         local hc1 = hbCfg.Color.High
@@ -815,38 +825,46 @@ function esp:ImplementCharacterClass()
                 obj.hbText.Visible   = false
             end
 
-            if fullUpdate then
-                if cfg.Name.Enabled then
-                    obj.nameLabel.Visible = true
-                    obj.nameLabel.Text    = obj.model.Name
-                else
-                    obj.nameLabel.Visible = false
-                end
+            if cfg.Name.Enabled then
+                obj.nameLabel.Visible = true
+                obj.nameLabel.Text    = obj.model.Name
+                local cx = position.X + size.X * 0.5
+                local ty = position.Y
+                -- push name up further if healthbar is on top
+                local nameOffset = (hbCfg.Enabled and hbCfg.Position == "Top") and -(esp.FontSize + 8) or -(esp.FontSize + 4)
+                obj.nameLabel.Size     = UDim2.new(0, 200, 0, esp.FontSize + 2)
+                obj.nameLabel.Position = UDim2.new(0, cx - 100, 0, ty + nameOffset)
+                obj.nameLabel.Parent   = esp.Gui
+            else
+                obj.nameLabel.Visible = false
+            end
 
-                if cfg.Distance.Enabled then
-                    obj.distLabel.Visible = true
-                    local dist = math.round((camera.CFrame.Position - head.Position).Magnitude)
-                    obj.distLabel.Text    = cfg.Distance.Format(dist)
-                else
-                    obj.distLabel.Visible = false
-                end
 
                 if cfg.Tool.Enabled then
-                    local tool     = obj.model:FindFirstChildWhichIsA("Tool")
-                    local toolName = tool and tool.Name or cfg.Tool.NoToolText
-                    if toolName ~= obj.lastToolName then
-                        obj.lastToolName   = toolName
-                        obj.toolLabel.Text = toolName
-                    end
-                    obj.toolLabel.Visible = true
-                else
-                    obj.toolLabel.Visible = false
+                local tool     = obj.model:FindFirstChildWhichIsA("Tool")
+                local toolName = tool and tool.Name or cfg.Tool.NoToolText
+                if toolName ~= obj.lastToolName then
+                    obj.lastToolName   = toolName
+                    obj.toolLabel.Text = toolName
                 end
+                obj.toolLabel.Visible = true
+                local cx = position.X + size.X * 0.5
+                local by = position.Y + size.Y
+                local distHeight = cfg.Distance.Enabled and (esp.FontSize + 2) or 0
+                local distOffset = (hbCfg.Enabled and hbCfg.Position == "Bottom") and (esp.FontSize + 10) or 3
+                obj.toolLabel.Size     = UDim2.new(0, 200, 0, esp.FontSize + 2)
+                obj.toolLabel.Position = UDim2.new(0, cx - 100, 0, by + distOffset + distHeight)
+                obj.toolLabel.Parent   = esp.Gui
+            else
+                obj.toolLabel.Visible = false
+            end
+
 
                 if cfg.Flags.Enabled then
                     obj.flagsContainer.Visible  = true
                     obj.flagsContainer.Size     = UDim2.new(0, 80, 1, 0)
-                    obj.flagsContainer.Position = UDim2.new(1, cfg.Flags.Offset, 0, 0)
+                    local flagsXOffset = (hbCfg.Enabled and hbCfg.Position == "Right") and (cfg.Flags.Offset + 8) or cfg.Flags.Offset
+                    obj.flagsContainer.Position = UDim2.new(1, flagsXOffset, 0, 0)
 
                     local flags = {}
 
