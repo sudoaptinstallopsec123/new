@@ -313,15 +313,14 @@ ServiceConnections.InputBeganConnection = UserInputService.InputBegan:Connect(fu
                 isMatch = Input.KeyCode == triggerKey
             elseif triggerKey.EnumType == Enum.UserInputType then
                 isMatch = Input.UserInputType == triggerKey
+                    and Input.UserInputType ~= Enum.UserInputType.Unknown
             end
         end
 
         if isMatch then
             if Environment.Settings.Toggle then
                 Running = not Running
-                if not Running then
-                    CancelLock()
-                end
+                if not Running then CancelLock() end
             else
                 Running = true
             end
@@ -334,6 +333,7 @@ ServiceConnections.InputBeganConnection = UserInputService.InputBegan:Connect(fu
 end)
 
 
+
     ServiceConnections.InputEndedConnection = UserInputService.InputEnded:Connect(function(Input)
     if not Typing then
         local triggerKey = Environment.Settings.TriggerKey
@@ -344,6 +344,7 @@ end)
                 isMatch = Input.KeyCode == triggerKey
             elseif triggerKey.EnumType == Enum.UserInputType then
                 isMatch = Input.UserInputType == triggerKey
+                    and Input.UserInputType ~= Enum.UserInputType.Unknown
             end
         end
 
@@ -357,6 +358,7 @@ end)
         end
     end
 end)
+
 
 
 Environment.Functions = {}
