@@ -303,37 +303,61 @@ end                                         -- <-- closes ThirdPerson if
         end
     end)
 
-    ServiceConnections.InputBeganConnection = UserInputService.InputBegan:Connect(function(Input)
-        if not Typing then
-            if Input.KeyCode == Environment.Settings.TriggerKey then
-                if Environment.Settings.Toggle then
-                    Running = not Running
+ServiceConnections.InputBeganConnection = UserInputService.InputBegan:Connect(function(Input)
+    if not Typing then
+        local triggerKey = Environment.Settings.TriggerKey
+        local isMatch = false
 
-                    if not Running then
-                        CancelLock()
-                    end
-                else
-                    Running = true
-                end
-            end
-            if Input.KeyCode == Environment.Settings.JumpOffsetKey then
-                Environment.Settings.JumpOffset = true
+        if typeof(triggerKey) == "EnumItem" then
+            if triggerKey.EnumType == Enum.KeyCode then
+                isMatch = Input.KeyCode == triggerKey
+            elseif triggerKey.EnumType == Enum.UserInputType then
+                isMatch = Input.UserInputType == triggerKey
             end
         end
-    end)
+
+        if isMatch then
+            if Environment.Settings.Toggle then
+                Running = not Running
+                if not Running then
+                    CancelLock()
+                end
+            else
+                Running = true
+            end
+        end
+
+        if Input.KeyCode == Environment.Settings.JumpOffsetKey then
+            Environment.Settings.JumpOffset = true
+        end
+    end
+end)
+
 
     ServiceConnections.InputEndedConnection = UserInputService.InputEnded:Connect(function(Input)
-        if not Typing then
-            if Input.KeyCode == Environment.Settings.TriggerKey and not Environment.Settings.Toggle then
-                Running = false
-                CancelLock()
-            end
-            if Input.KeyCode == Environment.Settings.JumpOffsetKey then
-                Environment.Settings.JumpOffset = false
+    if not Typing then
+        local triggerKey = Environment.Settings.TriggerKey
+        local isMatch = false
+
+        if typeof(triggerKey) == "EnumItem" then
+            if triggerKey.EnumType == Enum.KeyCode then
+                isMatch = Input.KeyCode == triggerKey
+            elseif triggerKey.EnumType == Enum.UserInputType then
+                isMatch = Input.UserInputType == triggerKey
             end
         end
-    end)
-end
+
+        if isMatch and not Environment.Settings.Toggle then
+            Running = false
+            CancelLock()
+        end
+
+        if Input.KeyCode == Environment.Settings.JumpOffsetKey then
+            Environment.Settings.JumpOffset = false
+        end
+    end
+end)
+
 
 Environment.Functions = {}
 
