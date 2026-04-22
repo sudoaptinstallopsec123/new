@@ -240,7 +240,7 @@ local function Load()
             fovCircle.Position = Vector2(mouseLocation.X, mouseLocation.Y)
         else
             Environment.FOVCircle.Visible = false
-        end
+        end -- closes FOVSettings if
 
         if (Running or Environment.Settings.AimbotAutoSelect) and Environment.Settings.Enabled then
             if IsHoldingTool() then
@@ -250,7 +250,8 @@ local function Load()
                         CancelLock()
                         return
                     end
-                end
+                end -- closes IsMainDead if
+
                 GetClosestPlayer()
 
                 if Environment.Locked then
@@ -258,32 +259,28 @@ local function Load()
 
                     if Environment.Settings.JumpOffset then
                         lockPartPosition = lockPartPosition + Vector3.new(0, Environment.Settings.JumpOffsetAmount, 0)
-                    end
+                    end -- closes JumpOffset if
 
-if Environment.Settings.ThirdPerson then
-    Environment.Settings.ThirdPersonSensitivity = mathclamp(Environment.Settings.ThirdPersonSensitivity, 0.1, 5)
-    local vec = Camera_WorldToViewportPoint(Camera, lockPartPosition)
-    local mouseLocation = UserInputService_GetMouseLocation(UserInputService)
-    
-    local dx = vec.X - mouseLocation.X
-    local dy = vec.Y - mouseLocation.Y
-    
-    local smoothFactor = mathclamp(Environment.Settings.ThirdPersonSensitivity / 10, 0.01, 1)
-    
-    local smoothX = dx * smoothFactor
-    local smoothY = dy * smoothFactor
-    
-    if math.abs(dx) > 0.5 or math.abs(dy) > 0.5 then
-        doMouseMove(smoothX, smoothY)
-    end
-else                                        -- <-- this is fine
-    if Environment.Settings.Sensitivity > 0 then
-        Animation = TweenService:Create(Camera, TweenInfo.new(Environment.Settings.Sensitivity, Enum.EasingStyle.Sine, Enum.EasingDirection.Out), {CFrame = CFrame.new(Camera.CFrame.Position, lockPartPosition)})
-        Animation:Play()
-    else
-        Camera.CFrame = CFrame.new(Camera.CFrame.Position, lockPartPosition)
-    end
-end                                         -- <-- closes ThirdPerson if
+                    if Environment.Settings.ThirdPerson then
+                        Environment.Settings.ThirdPersonSensitivity = mathclamp(Environment.Settings.ThirdPersonSensitivity, 0.1, 5)
+                        local vec = Camera_WorldToViewportPoint(Camera, lockPartPosition)
+                        local mouseLocation = UserInputService_GetMouseLocation(UserInputService)
+                        local dx = vec.X - mouseLocation.X
+                        local dy = vec.Y - mouseLocation.Y
+                        local smoothFactor = mathclamp(Environment.Settings.ThirdPersonSensitivity / 10, 0.01, 1)
+                        local smoothX = dx * smoothFactor
+                        local smoothY = dy * smoothFactor
+                        if math.abs(dx) > 0.5 or math.abs(dy) > 0.5 then
+                            doMouseMove(smoothX, smoothY)
+                        end -- closes abs if
+                    else
+                        if Environment.Settings.Sensitivity > 0 then
+                            Animation = TweenService:Create(Camera, TweenInfo.new(Environment.Settings.Sensitivity, Enum.EasingStyle.Sine, Enum.EasingDirection.Out), {CFrame = CFrame.new(Camera.CFrame.Position, lockPartPosition)})
+                            Animation:Play()
+                        else
+                            Camera.CFrame = CFrame.new(Camera.CFrame.Position, lockPartPosition)
+                        end -- closes Sensitivity if
+                    end -- closes ThirdPerson if
 
                     Environment.FOVCircle.Color = Environment.FOVSettings.LockedColor
 
@@ -291,17 +288,72 @@ end                                         -- <-- closes ThirdPerson if
                         if not Shooting then
                             mouse1press()
                             Shooting = true
-                        end
-                    end
+                        end -- closes not Shooting if
+                    end -- closes AutoFire if
                 else
                     if Shooting then
                         mouse1release()
                         Shooting = false
-                    end
+                    end -- closes Shooting if
+                end -- closes Environment.Locked if
+            end -- closes IsHoldingTool if
+        end -- closes Running if
+    end) -- closes RenderStepped
+
+    ServiceConnections.InputBeganConnection = UserInputService.InputBegan:Connect(function(Input)
+        if not Typing then
+            local triggerKey = Environment.Settings.TriggerKey
+            local isMatch = false
+
+            if typeof(triggerKey) == "EnumItem" then
+                if triggerKey.EnumType == Enum.KeyCode then
+                    isMatch = Input.KeyCode == triggerKey
+                elseif triggerKey.EnumType == Enum.UserInputType then
+                    isMatch = Input.UserInputType == triggerKey
+                        and Input.UserInputType ~= Enum.UserInputType.Unknown
                 end
+            end -- closes typeof if
+
+            if isMatch then
+                if Environment.Settings.Toggle then
+                    Running = not Running
+                    if not Running then CancelLock() end
+                else
+                    Running = true
+                end
+            end -- closes isMatch if
+
+            if Input.KeyCode == Environment.Settings.JumpOffsetKey then
+                Environment.Settings.JumpOffset = true
             end
         end
-    end)
+    end) -- closes InputBegan
+
+    ServiceConnections.InputEndedConnection = UserInputService.InputEnded:Connect(function(Input)
+        if not Typing then
+            local triggerKey = Environment.Settings.TriggerKey
+            local isMatch = false
+
+            if typeof(triggerKey) == "EnumItem" then
+                if triggerKey.EnumType == Enum.KeyCode then
+                    isMatch = Input.KeyCode == triggerKey
+                elseif triggerKey.EnumType == Enum.UserInputType then
+                    isMatch = Input.UserInputType == triggerKey
+                        and Input.UserInputType ~= Enum.UserInputType.Unknown
+                end
+            end -- closes typeof if
+
+            if isMatch and not Environment.Settings.Toggle then
+                Running = false
+                CancelLock()
+            end
+
+            if Input.KeyCode == Environment.Settings.JumpOffsetKey then
+                Environment.Settings.JumpOffset = false
+            end
+        end
+    end) -- closes InputEnded
+end -- closes Load()
 
 ServiceConnections.InputBeganConnection = UserInputService.InputBegan:Connect(function(Input)
     if not Typing then
@@ -332,9 +384,7 @@ ServiceConnections.InputBeganConnection = UserInputService.InputBegan:Connect(fu
     end
 end)
 
-
-
-    ServiceConnections.InputEndedConnection = UserInputService.InputEnded:Connect(function(Input)
+ServiceConnections.InputEndedConnection = UserInputService.InputEnded:Connect(function(Input)
     if not Typing then
         local triggerKey = Environment.Settings.TriggerKey
         local isMatch = false
@@ -358,6 +408,7 @@ end)
         end
     end
 end)
+end -- closes Load()
 
 
 
