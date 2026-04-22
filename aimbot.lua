@@ -355,62 +355,6 @@ local function Load()
     end) -- closes InputEnded
 end -- closes Load()
 
-ServiceConnections.InputBeganConnection = UserInputService.InputBegan:Connect(function(Input)
-    if not Typing then
-        local triggerKey = Environment.Settings.TriggerKey
-        local isMatch = false
-
-        if typeof(triggerKey) == "EnumItem" then
-            if triggerKey.EnumType == Enum.KeyCode then
-                isMatch = Input.KeyCode == triggerKey
-            elseif triggerKey.EnumType == Enum.UserInputType then
-                isMatch = Input.UserInputType == triggerKey
-                    and Input.UserInputType ~= Enum.UserInputType.Unknown
-            end
-        end
-
-        if isMatch then
-            if Environment.Settings.Toggle then
-                Running = not Running
-                if not Running then CancelLock() end
-            else
-                Running = true
-            end
-        end
-
-        if Input.KeyCode == Environment.Settings.JumpOffsetKey then
-            Environment.Settings.JumpOffset = true
-        end
-    end
-end)
-
-ServiceConnections.InputEndedConnection = UserInputService.InputEnded:Connect(function(Input)
-    if not Typing then
-        local triggerKey = Environment.Settings.TriggerKey
-        local isMatch = false
-
-        if typeof(triggerKey) == "EnumItem" then
-            if triggerKey.EnumType == Enum.KeyCode then
-                isMatch = Input.KeyCode == triggerKey
-            elseif triggerKey.EnumType == Enum.UserInputType then
-                isMatch = Input.UserInputType == triggerKey
-                    and Input.UserInputType ~= Enum.UserInputType.Unknown
-            end
-        end
-
-        if isMatch and not Environment.Settings.Toggle then
-            Running = false
-            CancelLock()
-        end
-
-        if Input.KeyCode == Environment.Settings.JumpOffsetKey then
-            Environment.Settings.JumpOffset = false
-        end
-    end
-end)
-end -- closes Load()
-
-
 
 Environment.Functions = {}
 
