@@ -12,6 +12,35 @@ local Workspace  = cloneref(game:GetService("Workspace"))
 
 local LocalPlayer = Players.LocalPlayer
 
+local function isGodded(character)
+    local humanoid = character:FindFirstChildOfClass("Humanoid")
+    if not humanoid then return false end
+    if humanoid.MaxHealth == math.huge then return true end
+    if humanoid.Health == math.huge then return true end
+    if humanoid.MaxHealth >= 1e10 then return true end
+    return false
+end
+
+local function isBehindWall(head, camera)
+    if not head or not camera then return false end
+    local origin = camera.CFrame.Position
+    local direction = (head.Position - origin)
+    local raycastParams = RaycastParams.new()
+    raycastParams.FilterDescendantsInstances = {LocalPlayer.Character}
+    raycastParams.FilterType = Enum.RaycastFilterType.Exclude
+    local result = workspace:Raycast(origin, direction, raycastParams)
+    if result then
+        -- if the hit instance is not part of the target character
+        local hitChar = result.Instance:FindFirstAncestorWhichIsA("Model")
+        local targetChar = head.Parent
+        if hitChar ~= targetChar then
+            return true
+        end
+    end
+    return false
+end
+
+
 local esp = {
     Classes     = {},
     Objects     = {},
@@ -52,6 +81,15 @@ local esp = {
             Enabled = false,
         },
 
+        GodCheck = {
+    Enabled = false,
+},
+
+WallCheck = {
+    Enabled         = false,
+    VisibleColor    = Color3.fromRGB(255, 255, 255),  -- color when visible
+    BehindWallColor = Color3.fromRGB(255, 50, 50),    -- color when behind wall
+},
 
         Box = {
             Enabled = false,
@@ -597,313 +635,321 @@ function esp:ImplementCharacterClass()
             }
         end,
 
-        IB_NO_VIRTUALIZE(function(character, obj)
-            local cfg      = esp.Configuration
-            local boxCfg   = cfg.Box
-            local outCfg   = boxCfg.Outline
-            local fillCfg  = boxCfg.Fill
-            local glowCfg  = boxCfg.Glow
-            local hbCfg    = cfg.HealthBar
-            local teamCfg  = cfg.TeamCheck
+IB_NO_VIRTUALIZE(function(character, obj)
+    local cfg      = esp.Configuration
+    local boxCfg   = cfg.Box
+    local outCfg   = boxCfg.Outline
+    local fillCfg  = boxCfg.Fill
+    local glowCfg  = boxCfg.Glow
+    local hbCfg    = cfg.HealthBar
+    local teamCfg  = cfg.TeamCheck
+    local wallCfg  = cfg.WallCheck
 
-            local now = tick()
-            local dt  = now - obj.lastUpdate
+    local now = tick()
+    local dt  = now - obj.lastUpdate
 
-            local fullUpdate = dt >= esp.UpdateRate
+    local fullUpdate = dt >= esp.UpdateRate
 
-            if not cfg.Enabled then
-                obj.holder.Visible = false
-                return false
-            end
+    if not cfg.Enabled then
+        obj.holder.Visible = false
+        return false
+    end
 
-            local camera = Workspace.CurrentCamera
-            if not camera then
-                obj.holder.Visible = false
-                return false
-            end
+    local camera = Workspace.CurrentCamera
+    if not camera then
+        obj.holder.Visible = false
+        return false
+    end
 
-            local humanoid = obj.cachedHumanoid
-            local head     = obj.cachedHead
+    local humanoid = obj.cachedHumanoid
+    local head     = obj.cachedHead
 
-            if not head or not humanoid or humanoid.Health <= 0 then
-                return true
-            end
+    if not head or not humanoid or humanoid.Health <= 0 then
+        return true
+    end
 
-            if teamCfg.Enabled and player and player ~= LocalPlayer then
-                if player.Team ~= nil and player.Team == LocalPlayer.Team then
-                    obj.holder.Visible = false
-                    return false
-                end
-            end
+    local player = Players:GetPlayerFromCharacter(obj.model)
 
-            local _, onScreen = camera:WorldToViewportPoint(head.Position)
-            if not onScreen then
-                obj.holder.Visible = false
-                return false
-            end
+    if teamCfg.Enabled and player and player ~= LocalPlayer then
+        if player.Team ~= nil and player.Team == LocalPlayer.Team then
+            obj.holder.Visible = false
+            return false
+        end
+    end
 
-            if esp.Configuration.InvisCheck.Enabled then
-            local function isInvisible(character)
-                local torso = character:FindFirstChild("UpperTorso") or character:FindFirstChild("Torso")
-                if torso and torso.Transparency >= 0.99 then
-                    return true
-                end
-                local totalParts = 0
-                local invisParts = 0
-                for _, part in obj.cachedParts do
-                    if part.Name ~= "HumanoidRootPart" then
-                        totalParts = totalParts + 1
-                        if part.Transparency >= 0.99 then
-                            invisParts = invisParts + 1
-                        end
+    local _, onScreen = camera:WorldToViewportPoint(head.Position)
+    if not onScreen then
+        obj.holder.Visible = false
+        return false
+    end
+
+    if cfg.InvisCheck.Enabled then
+        local torso = obj.model:FindFirstChild("UpperTorso") or obj.model:FindFirstChild("Torso")
+        local invisible = false
+        if torso and torso.Transparency >= 0.99 then
+            invisible = true
+        else
+            local totalParts, invisParts = 0, 0
+            for _, part in obj.cachedParts do
+                if part.Name ~= "HumanoidRootPart" then
+                    totalParts += 1
+                    if part.Transparency >= 0.99 then
+                        invisParts += 1
                     end
                 end
-                if totalParts > 0 and (invisParts / totalParts) >= 0.75 then
-                    return true
-                end
-                return false
             end
-        
-            if isInvisible(obj.model) then
-                obj.holder.Visible = false
-                return false
+            if totalParts > 0 and (invisParts / totalParts) >= 0.75 then
+                invisible = true
             end
         end
+        if invisible then
+            obj.holder.Visible = false
+            return false
+        end
+    end
 
-            local position, size = boxCfg.GetStyle(boxCfg.Style, obj.cachedParts, camera)
-            if not position or not size then
-                obj.holder.Visible = false
-                return false
+    if cfg.GodCheck.Enabled then
+        if isGodded(obj.model) then
+            obj.holder.Visible = false
+            return false
+        end
+    end
+
+    local position, size = boxCfg.GetStyle(boxCfg.Style, obj.cachedParts, camera)
+    if not position or not size then
+        obj.holder.Visible = false
+        return false
+    end
+
+    obj.holder.Visible  = true
+    obj.holder.Position = UDim2.new(0, position.X, 0, position.Y)
+    obj.holder.Size     = UDim2.new(0, size.X, 0, size.Y)
+
+    if fullUpdate then
+        obj.lastUpdate = now
+
+        local teamColor = nil
+        if teamCfg.UseTeamColors and player and player.Team then
+            teamColor = player.TeamColor.Color
+        end
+
+        if teamCfg.UseTeamColors then
+            cfg.Name.Color     = teamColor or Color3.fromRGB(255, 255, 255)
+            cfg.Distance.Color = teamColor or Color3.fromRGB(235, 235, 235)
+        end
+
+        if obj.boxGradient and fillCfg.Enabled and fillCfg.Gradient.Enabled then
+            local c1 = teamColor or fillCfg.Gradient.Color[1]
+            local c2 = fillCfg.Gradient.Color[2]
+            obj.boxGradient.Color = ColorSequence.new({
+                ColorSequenceKeypoint.new(0, c1),
+                ColorSequenceKeypoint.new(1, c2),
+            })
+        end
+
+        if obj.boxOutline then
+            local boxColor
+            if wallCfg.Enabled then
+                local behind = isBehindWall(head, camera)
+                boxColor = behind and wallCfg.BehindWallColor or wallCfg.VisibleColor
+            else
+                boxColor = teamColor or outCfg.Color
+            end
+            obj.boxOutline.Color = boxColor
+            obj.boxBorder.Color  = Color3.new(0, 0, 0)
+        end
+    end
+
+    if obj.glow then
+        obj.glow.Visible = glowCfg.Enabled
+    end
+
+    local isCorners = boxCfg.Enabled and outCfg.Enabled and boxCfg.Type == "Corners"
+    local isFull    = boxCfg.Enabled and outCfg.Enabled and boxCfg.Type == "Full"
+    if obj.boxOutline then
+        obj.boxOutline.Enabled = isFull
+        obj.boxBorder.Enabled  = isFull
+    end
+    for _, f in obj.cornerFrames do
+        f.Visible = isCorners
+    end
+
+    if hbCfg.Enabled then
+        obj.hbHolder.Visible = true
+
+        local pct = hbCfg.GetHealth(humanoid)
+        local pos = hbCfg.Position
+        local gap = 4
+
+        if math.abs(pct - obj.lastHealth) > 0.01 or fullUpdate then
+            obj.lastHealth = pct
+
+            if pos == "Left" then
+                obj.hbHolder.AnchorPoint = Vector2.new(1, 0)
+                obj.hbHolder.Position    = UDim2.new(0, -gap, 0, -1)
+                obj.hbHolder.Size        = UDim2.new(0, 1, 1, 2)
+                obj.hbFill.AnchorPoint   = Vector2.new(0, 1)
+                obj.hbFill.Position      = UDim2.new(0, 0, 1, 0)
+                obj.hbFill.Size          = UDim2.new(1, 0, pct, 0)
+                obj.hbGradient.Rotation  = 90
+            elseif pos == "Right" then
+                obj.hbHolder.AnchorPoint = Vector2.new(0, 0)
+                obj.hbHolder.Position    = UDim2.new(1, gap, 0, -1)
+                obj.hbHolder.Size        = UDim2.new(0, 1, 1, 2)
+                obj.hbFill.AnchorPoint   = Vector2.new(0, 1)
+                obj.hbFill.Position      = UDim2.new(0, 0, 1, 0)
+                obj.hbFill.Size          = UDim2.new(1, 0, pct, 0)
+                obj.hbGradient.Rotation  = 90
+            elseif pos == "Top" then
+                obj.hbHolder.AnchorPoint = Vector2.new(0, 1)
+                obj.hbHolder.Position    = UDim2.new(0, 0, 0, -gap)
+                obj.hbHolder.Size        = UDim2.new(1, 0, 0, 4)
+                obj.hbFill.AnchorPoint   = Vector2.new(0, 0)
+                obj.hbFill.Position      = UDim2.new(0, 0, 0, 0)
+                obj.hbFill.Size          = UDim2.new(pct, 0, 1, 0)
+                obj.hbGradient.Rotation  = 0
+            elseif pos == "Bottom" then
+                obj.hbHolder.AnchorPoint = Vector2.new(0, 0)
+                obj.hbHolder.Position    = UDim2.new(0, 0, 1, gap)
+                obj.hbHolder.Size        = UDim2.new(1, 0, 0, 4)
+                obj.hbFill.AnchorPoint   = Vector2.new(0, 0)
+                obj.hbFill.Position      = UDim2.new(0, 0, 0, 0)
+                obj.hbFill.Size          = UDim2.new(pct, 0, 1, 0)
+                obj.hbGradient.Rotation  = 0
             end
 
-            obj.holder.Visible  = true
-            obj.holder.Position = UDim2.new(0, position.X, 0, position.Y)
-            obj.holder.Size     = UDim2.new(0, size.X, 0, size.Y)
+            if hbCfg.Animated then
+                local hc1 = hbCfg.Color.High
+                local hc2 = hbCfg.Color.Medium
+                local hc3 = hbCfg.Color.Low
+                local spd = math.max(hbCfg.AnimSpeed or 1, 0.01)
+                local p   = (now * spd) % 3
 
-            if fullUpdate then
-                obj.lastUpdate = now
-
-                local teamColor = nil
-                if teamCfg.UseTeamColors and player and player.Team then
-                    teamColor = player.TeamColor.Color
-                end
-                
-                if obj.boxOutline then
-                    obj.boxOutline.Color = teamColor or outCfg.Color
-                    obj.boxBorder.Color  = Color3.new(0, 0, 0)
-                end
-                
-                if teamCfg.UseTeamColors then
-                    esp.Configuration.Name.Color     = teamColor or Color3.fromRGB(255, 255, 255)
-                    esp.Configuration.Distance.Color = teamColor or Color3.fromRGB(235, 235, 235)
+                local function sampleHealth(s)
+                    s = s % 3
+                    if s < 1 then     return hc1:Lerp(hc2, s)
+                    elseif s < 2 then return hc2:Lerp(hc3, s - 1)
+                    else              return hc3:Lerp(hc1, s - 2) end
                 end
 
-
-                if obj.boxGradient and fillCfg.Enabled and fillCfg.Gradient.Enabled then
-                    local c1 = teamColor or fillCfg.Gradient.Color[1]
-                    local c2 = fillCfg.Gradient.Color[2]
-                    obj.boxGradient.Color = ColorSequence.new({
-                        ColorSequenceKeypoint.new(0, c1),
-                        ColorSequenceKeypoint.new(1, c2),
-                    })
-                end
-
-                if obj.boxOutline then
-                    obj.boxOutline.Color = teamColor or outCfg.Color
-                end
+                obj.hbGradient.Color = ColorSequence.new({
+                    ColorSequenceKeypoint.new(0,   sampleHealth(p)),
+                    ColorSequenceKeypoint.new(0.5, sampleHealth(p + 1)),
+                    ColorSequenceKeypoint.new(1,   sampleHealth(p + 2)),
+                })
             end
 
-            if obj.glow then
-                obj.glow.Visible = glowCfg.Enabled
-            end
-
-            print("Box.Enabled:", boxCfg.Enabled, "Outline.Enabled:", outCfg.Enabled, "Type:", boxCfg.Type)
-            local isCorners = outCfg.Enabled and boxCfg.Type == "Corners"
-            local isFull    = outCfg.Enabled and boxCfg.Type == "Full"
-            if obj.boxOutline then
-                obj.boxOutline.Enabled = isFull
-                obj.boxBorder.Enabled  = isFull
-            end
-            for _, f in obj.cornerFrames do
-                f.Visible = isCorners
-            end
-
-            if hbCfg.Enabled then
-                obj.hbHolder.Visible = true
-
-                local pct = hbCfg.GetHealth(humanoid)
-                local pos = hbCfg.Position
-                local gap = 4
-
-                if math.abs(pct - obj.lastHealth) > 0.01 or fullUpdate then
-                    obj.lastHealth = pct
-
+            if hbCfg.Text.Enabled then
+                local hpText, showText = hbCfg.Text.GetText(humanoid)
+                obj.hbText.Text    = hpText
+                obj.hbText.Visible = showText
+                if showText then
                     if pos == "Left" then
-                        obj.hbHolder.AnchorPoint = Vector2.new(1, 0)
-                        obj.hbHolder.Position    = UDim2.new(0, -gap, 0, -1)
-                        obj.hbHolder.Size        = UDim2.new(0, 1, 1, 2)
-                        obj.hbFill.AnchorPoint   = Vector2.new(0, 1)
-                        obj.hbFill.Position      = UDim2.new(0, 0, 1, 0)
-                        obj.hbFill.Size          = UDim2.new(1, 0, pct, 0)
-                        obj.hbGradient.Rotation  = 90
+                        obj.hbText.AnchorPoint    = Vector2.new(1, 0)
+                        obj.hbText.TextXAlignment = Enum.TextXAlignment.Right
+                        obj.hbText.Position       = UDim2.new(0, -2, 1 - pct, 0)
                     elseif pos == "Right" then
-                        obj.hbHolder.AnchorPoint = Vector2.new(0, 0)
-                        obj.hbHolder.Position    = UDim2.new(1, gap, 0, -1)
-                        obj.hbHolder.Size        = UDim2.new(0, 1, 1, 2)
-                        obj.hbFill.AnchorPoint   = Vector2.new(0, 1)
-                        obj.hbFill.Position      = UDim2.new(0, 0, 1, 0)
-                        obj.hbFill.Size          = UDim2.new(1, 0, pct, 0)
-                        obj.hbGradient.Rotation  = 90
+                        obj.hbText.AnchorPoint    = Vector2.new(0, 0)
+                        obj.hbText.TextXAlignment = Enum.TextXAlignment.Left
+                        obj.hbText.Position       = UDim2.new(1, 2, 1 - pct, 0)
                     elseif pos == "Top" then
-                        obj.hbHolder.AnchorPoint = Vector2.new(0, 1)
-                        obj.hbHolder.Position    = UDim2.new(0, 0, 0, -gap)
-                        obj.hbHolder.Size        = UDim2.new(1, 0, 0, 4)
-                        obj.hbFill.AnchorPoint   = Vector2.new(0, 0)
-                        obj.hbFill.Position      = UDim2.new(0, 0, 0, 0)
-                        obj.hbFill.Size          = UDim2.new(pct, 0, 1, 0)
-                        obj.hbGradient.Rotation  = 0
+                        obj.hbText.AnchorPoint    = Vector2.new(0, 1)
+                        obj.hbText.TextXAlignment = Enum.TextXAlignment.Left
+                        obj.hbText.Position       = UDim2.new(0, 2, 0, -2)
                     elseif pos == "Bottom" then
-                        obj.hbHolder.AnchorPoint = Vector2.new(0, 0)
-                        obj.hbHolder.Position    = UDim2.new(0, 0, 1, gap)
-                        obj.hbHolder.Size        = UDim2.new(1, 0, 0, 4)
-                        obj.hbFill.AnchorPoint   = Vector2.new(0, 0)
-                        obj.hbFill.Position      = UDim2.new(0, 0, 0, 0)
-                        obj.hbFill.Size          = UDim2.new(pct, 0, 1, 0)
-                        obj.hbGradient.Rotation  = 0
-                    end
-
-                    if hbCfg.Animated then
-                        local hc1 = hbCfg.Color.High
-                        local hc2 = hbCfg.Color.Medium
-                        local hc3 = hbCfg.Color.Low
-                        local spd = math.max(hbCfg.AnimSpeed or 1, 0.01)
-                        local p   = (now * spd) % 3
-
-                        local function sampleHealth(s)
-                            s = s % 3
-                            if s < 1 then     return hc1:Lerp(hc2, s)
-                            elseif s < 2 then return hc2:Lerp(hc3, s - 1)
-                            else              return hc3:Lerp(hc1, s - 2) end
-                        end
-
-                        obj.hbGradient.Color = ColorSequence.new({
-                            ColorSequenceKeypoint.new(0,   sampleHealth(p)),
-                            ColorSequenceKeypoint.new(0.5, sampleHealth(p + 1)),
-                            ColorSequenceKeypoint.new(1,   sampleHealth(p + 2)),
-                        })
-                    end
-
-                    if hbCfg.Text.Enabled then
-                        local hpText, showText = hbCfg.Text.GetText(humanoid)
-                        obj.hbText.Text    = hpText
-                        obj.hbText.Visible = showText
-                        if showText then
-                            if pos == "Left" then
-                                obj.hbText.AnchorPoint    = Vector2.new(1, 0)
-                                obj.hbText.TextXAlignment = Enum.TextXAlignment.Right
-                                obj.hbText.Position       = UDim2.new(0, -2, 1 - pct, 0)
-                            elseif pos == "Right" then
-                                obj.hbText.AnchorPoint    = Vector2.new(0, 0)
-                                obj.hbText.TextXAlignment = Enum.TextXAlignment.Left
-                                obj.hbText.Position       = UDim2.new(1, 2, 1 - pct, 0)
-                            elseif pos == "Top" then
-                                obj.hbText.AnchorPoint    = Vector2.new(0, 1)
-                                obj.hbText.TextXAlignment = Enum.TextXAlignment.Left
-                                obj.hbText.Position       = UDim2.new(0, 2, 0, -2)
-                            elseif pos == "Bottom" then
-                                obj.hbText.AnchorPoint    = Vector2.new(0, 0)
-                                obj.hbText.TextXAlignment = Enum.TextXAlignment.Left
-                                obj.hbText.Position       = UDim2.new(0, 2, 1, 2)
-                            end
-                        end
-                    else
-                        obj.hbText.Visible = false
+                        obj.hbText.AnchorPoint    = Vector2.new(0, 0)
+                        obj.hbText.TextXAlignment = Enum.TextXAlignment.Left
+                        obj.hbText.Position       = UDim2.new(0, 2, 1, 2)
                     end
                 end
             else
-                obj.hbHolder.Visible = false
-                obj.hbText.Visible   = false
+                obj.hbText.Visible = false
+            end
+        end
+    else
+        obj.hbHolder.Visible = false
+        obj.hbText.Visible   = false
+    end
+
+    if fullUpdate then
+        if cfg.Name.Enabled then
+            obj.nameLabel.Visible = true
+            obj.nameLabel.Text    = obj.model.Name
+        else
+            obj.nameLabel.Visible = false
+        end
+
+        if cfg.Distance.Enabled then
+            obj.distLabel.Visible = true
+            local dist = math.round((camera.CFrame.Position - head.Position).Magnitude)
+            obj.distLabel.Text    = cfg.Distance.Format(dist)
+        else
+            obj.distLabel.Visible = false
+        end
+
+        if cfg.Tool.Enabled then
+            local tool     = obj.model:FindFirstChildWhichIsA("Tool")
+            local toolName = tool and tool.Name or cfg.Tool.NoToolText
+            if toolName ~= obj.lastToolName then
+                obj.lastToolName   = toolName
+                obj.toolLabel.Text = toolName
+            end
+            obj.toolLabel.Visible = true
+        else
+            obj.toolLabel.Visible = false
+        end
+
+        if cfg.Flags.Enabled then
+            obj.flagsContainer.Visible  = true
+            obj.flagsContainer.Size     = UDim2.new(0, 80, 1, 0)
+            obj.flagsContainer.Position = UDim2.new(1, cfg.Flags.Offset, 0, 0)
+
+            local flags = {}
+
+            local state     = humanoid:GetState()
+            local stateStr  = tostring(state)
+            local stateName = stateStr:match("HumanoidStateType%.(.+)$")
+            if stateName and stateName ~= "Running" and stateName ~= "None" then
+                table.insert(flags, { text = stateName, color = Color3.fromRGB(255, 220, 80) })
             end
 
-            if fullUpdate then
-                if cfg.Name.Enabled then
-                    obj.nameLabel.Visible = true
-                    obj.nameLabel.Text    = obj.model.Name
-                else
-                    obj.nameLabel.Visible = false
-                end
-
-                if cfg.Distance.Enabled then
-                    obj.distLabel.Visible = true
-                    local dist = math.round((camera.CFrame.Position - head.Position).Magnitude)
-                    obj.distLabel.Text    = cfg.Distance.Format(dist)
-                else
-                    obj.distLabel.Visible = false
-                end
-
-                if cfg.Tool.Enabled then
-                    local tool     = obj.model:FindFirstChildWhichIsA("Tool")
-                    local toolName = tool and tool.Name or cfg.Tool.NoToolText
-                    if toolName ~= obj.lastToolName then
-                        obj.lastToolName   = toolName
-                        obj.toolLabel.Text = toolName
-                    end
-                    obj.toolLabel.Visible = true
-                else
-                    obj.toolLabel.Visible = false
-                end
-
-                if cfg.Flags.Enabled then
-                    obj.flagsContainer.Visible  = true
-                    obj.flagsContainer.Size     = UDim2.new(0, 80, 1, 0)
-                    obj.flagsContainer.Position = UDim2.new(1, cfg.Flags.Offset, 0, 0)
-
-                    local flags = {}
-
-                    local state     = humanoid:GetState()
-                    local stateStr  = tostring(state)
-                    local stateName = stateStr:match("HumanoidStateType%.(.+)$")
-                    if stateName and stateName ~= "Running" and stateName ~= "None" then
-                        table.insert(flags, { text = stateName, color = Color3.fromRGB(255, 220, 80) })
-                    end
-
-                    local rootPart = obj.model:FindFirstChild("HumanoidRootPart")
-                    if rootPart then
-                        local spd = math.round(Vector3.new(rootPart.AssemblyLinearVelocity.X, 0, rootPart.AssemblyLinearVelocity.Z).Magnitude)
-                        if spd > 24 then
-                            table.insert(flags, { text = spd .. " spd", color = Color3.fromRGB(255, 100, 100) })
-                        end
-                    end
-
-                    if player and player:GetAttribute("Cheating") then
-                        table.insert(flags, { text = "Exploiting", color = Color3.fromRGB(255, 60, 60) })
-                    end
-
-                    for i, flag in ipairs(flags) do
-                        local label = obj.cachedFlags[i]
-                        if not label then
-                            label = makeLabel(obj.flagsContainer)
-                            label.TextXAlignment   = Enum.TextXAlignment.Left
-                            label.TextSize         = esp.FontSize
-                            label.Size             = UDim2.new(1, 0, 0, esp.FontSize + 2)
-                            label.ZIndex           = 10
-                            obj.cachedFlags[i]     = label
-                        end
-                        label.Text       = flag.text
-                        label.TextColor3 = flag.color
-                        label.Visible    = true
-                    end
-
-                    for i = #flags + 1, #obj.cachedFlags do
-                        obj.cachedFlags[i].Visible = false
-                    end
-                else
-                    obj.flagsContainer.Visible = false
+            local rootPart = obj.model:FindFirstChild("HumanoidRootPart")
+            if rootPart then
+                local spd = math.round(Vector3.new(rootPart.AssemblyLinearVelocity.X, 0, rootPart.AssemblyLinearVelocity.Z).Magnitude)
+                if spd > 24 then
+                    table.insert(flags, { text = spd .. " spd", color = Color3.fromRGB(255, 100, 100) })
                 end
             end
 
-            return false
-        end),
+            if player and player:GetAttribute("Cheating") then
+                table.insert(flags, { text = "Exploiting", color = Color3.fromRGB(255, 60, 60) })
+            end
+
+            for i, flag in ipairs(flags) do
+                local label = obj.cachedFlags[i]
+                if not label then
+                    label = makeLabel(obj.flagsContainer)
+                    label.TextXAlignment   = Enum.TextXAlignment.Left
+                    label.TextSize         = esp.FontSize
+                    label.Size             = UDim2.new(1, 0, 0, esp.FontSize + 2)
+                    label.ZIndex           = 10
+                    obj.cachedFlags[i]     = label
+                end
+                label.Text       = flag.text
+                label.TextColor3 = flag.color
+                label.Visible    = true
+            end
+
+            for i = #flags + 1, #obj.cachedFlags do
+                obj.cachedFlags[i].Visible = false
+            end
+        else
+            obj.flagsContainer.Visible = false
+        end
+    end
+
+    return false
+end),
 
         function(obj)
             for _, c in obj.partConns do
@@ -1017,16 +1063,6 @@ end)))
 
 task.defer(function()
     esp:ImplementPlayerESP(false)
-end)
-
-task.spawn(function()
-    task.wait(2)
-    print("Total players:", #Players:GetPlayers())
-    print("Total ESP objects:", (function() local c = 0 for _ in pairs(esp.Objects) do c = c + 1 end return c end)())
-    for _, p in Players:GetPlayers() do
-        if p == Players.LocalPlayer then continue end
-        print(p.Name, "char:", p.Character ~= nil, "esp:", esp.Objects[p.Character] ~= nil)
-    end
 end)
 
 return esp
