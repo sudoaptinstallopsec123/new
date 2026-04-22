@@ -305,14 +305,13 @@ local function Load()
             local triggerKey = Environment.Settings.TriggerKey
             local isMatch = false
 
-            if typeof(triggerKey) == "EnumItem" then
-                if triggerKey.EnumType == Enum.KeyCode then
-                    isMatch = Input.KeyCode == triggerKey
-                elseif triggerKey.EnumType == Enum.UserInputType then
-                    isMatch = Input.UserInputType == triggerKey
-                        and Input.UserInputType ~= Enum.UserInputType.Unknown
-                end
-            end -- closes typeof if
+if typeof(triggerKey) == "EnumItem" then
+    if triggerKey.EnumType == Enum.KeyCode then
+        isMatch = Input.KeyCode == triggerKey
+    else
+        isMatch = Input.UserInputType == triggerKey
+    end
+end
 
             if isMatch then
                 if Environment.Settings.Toggle then
@@ -334,14 +333,13 @@ local function Load()
             local triggerKey = Environment.Settings.TriggerKey
             local isMatch = false
 
-            if typeof(triggerKey) == "EnumItem" then
-                if triggerKey.EnumType == Enum.KeyCode then
-                    isMatch = Input.KeyCode == triggerKey
-                elseif triggerKey.EnumType == Enum.UserInputType then
-                    isMatch = Input.UserInputType == triggerKey
-                        and Input.UserInputType ~= Enum.UserInputType.Unknown
-                end
-            end -- closes typeof if
+if typeof(triggerKey) == "EnumItem" then
+    if triggerKey.EnumType == Enum.KeyCode then
+        isMatch = Input.KeyCode == triggerKey
+    else
+        isMatch = Input.UserInputType == triggerKey
+    end
+end
 
             if isMatch and not Environment.Settings.Toggle then
                 Running = false
