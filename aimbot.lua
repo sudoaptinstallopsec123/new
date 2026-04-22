@@ -162,19 +162,31 @@ local function GetClosestPlayer()
             local closestPartDistance = math.huge
 
             if Environment.Settings.ClosestBodyPartAimbot then
-                for _, part in ipairs(closestPlayer.Character:GetChildren()) do
-                    if part:IsA("BasePart") then
-                        local distance = (part.Position - Mouse.Hit.p).Magnitude
-                        if distance < closestPartDistance then
-                            closestPart = part
-                            closestPartDistance = distance
-                        end
-                    end
+    local mousePos = Vector2(UserInputService:GetMouseLocation().X, UserInputService:GetMouseLocation().Y)
+    
+    for _, part in ipairs(closestPlayer.Character:GetDescendants()) do
+        if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
+            local screenPos, onScreen = Camera:WorldToViewportPoint(part.Position)
+            if onScreen then
+                local distance = (mousePos - Vector2(screenPos.X, screenPos.Y)).Magnitude
+                if distance < closestPartDistance then
+                    closestPart = part
+                    closestPartDistance = distance
                 end
-            else
-                closestPart = closestPlayer.Character:FindFirstChild(Environment.Settings.LockPart)
-                closestPartDistance = closestDistance
             end
+        end
+    end
+
+    -- fallback if nothing found
+    if not closestPart then
+        closestPart = closestPlayer.Character:FindFirstChild("HumanoidRootPart")
+            or closestPlayer.Character:FindFirstChild("Torso")
+        closestPartDistance = closestDistance
+    end
+else
+    closestPart = closestPlayer.Character:FindFirstChild(Environment.Settings.LockPart)
+    closestPartDistance = closestDistance
+end
 
                         if closestPart then
                 RequiredDistance = closestPartDistance
