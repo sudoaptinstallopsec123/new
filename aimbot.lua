@@ -242,8 +242,7 @@ local function Load()
             Environment.FOVCircle.Visible = false
         end -- closes FOVSettings if
 
-        if (Running or Environment.Settings.AimbotAutoSelect) and Environment.Settings.Enabled then
-            if IsHoldingTool() then
+if Environment.Settings.Enabled or Environment.Settings.AimbotAutoSelect then            if IsHoldingTool() then
                 if Environment.Settings.IsMainDead then
                     local humanoid = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
                     if humanoid and humanoid.Health <= 0 then
