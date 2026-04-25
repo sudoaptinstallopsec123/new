@@ -1,7 +1,6 @@
 local select = select
 local pcall, getgenv, next, Vector2, mathclamp = pcall, getgenv, next, Vector2.new, math.clamp
 
--- keep mousemoverel as the global, don't reassign it
 local _mousemoverel = mousemoverel
 
 local function doMouseMove(x, y)
@@ -36,7 +35,7 @@ Environment.Settings = {
     ForceField_Check = false,
     Tool_Check = false,
     GodCheck = false,
-    ReactionTime = 0,  -- in seconds, 0 = instant
+    ReactionTime = 0,
     AimbotAutoSelect = false,
     ThirdPerson = false,
     ThirdPersonSensitivity = 3,
@@ -51,7 +50,9 @@ Environment.Settings = {
     AutoFire = false,
     JumpOffset = false,
     JumpOffsetAmount = 0,
-    JumpOffsetKey = Enum.KeyCode.G
+    JumpOffsetKey = Enum.KeyCode.G,
+    SmoothX = 1.0,
+    SmoothY = 1.5
 }
 
 Environment.FOVSettings = {
@@ -68,9 +69,15 @@ Environment.FOVSettings = {
 
 Environment.FOVCircle = Environment.FOVCircle or Drawing.new("Circle")
 
+-- Tracks which part we are actually aiming at without mutating LockPart setting
+Environment.ActiveLockPart = nil
+
+local PendingLocks = {}
+
 local function CancelLock()
     Environment.Locked = nil
-    PendingLocks = {}       -- add this
+    Environment.ActiveLockPart = nil
+    PendingLocks = {}
     if Animation then Animation:Cancel() end
     Environment.FOVCircle.Color = Environment.FOVSettings.Color
     if Shooting then
@@ -89,8 +96,14 @@ local function IsObstructed(target)
     if not Environment.Settings.WallCheck then
         return false
     end
-    local targetPosition = target.Character[Environment.Settings.LockPart].Position
-    local parts = Camera:GetPartsObscuringTarget({targetPosition}, {LocalPlayer.Character, target.Character})
+    -- Use ActiveLockPart if closest body part mode is on, otherwise use the setting
+    local partName = (Environment.Settings.ClosestBodyPartAimbot and Environment.ActiveLockPart)
+        or Environment.Settings.LockPart
+    local char = target.Character
+    if not char then return false end
+    local part = char:FindFirstChild(partName)
+    if not part then return false end
+    local parts = Camera:GetPartsObscuringTarget({part.Position}, {LocalPlayer.Character, char})
     return #parts > 0
 end
 
@@ -108,21 +121,20 @@ local function IsHoldingTool()
     return LocalPlayer.Character:FindFirstChildOfClass("Tool") ~= nil
 end
 
-local PendingLocks = {}
-
 local function IsGodded(character)
     local humanoid = character:FindFirstChildOfClass("Humanoid")
     if not humanoid then return true end
     if humanoid.MaxHealth == math.huge then return true end
     if humanoid.Health == math.huge then return true end
-    -- check for forcefield
     if character:FindFirstChildOfClass("ForceField") then return true end
-    -- check if taking no damage (health locked at max)
-    if humanoid.Health >= humanoid.MaxHealth and humanoid.MaxHealth > 0 then
-        -- could be full health legitimately, so only skip if maxhealth is suspiciously high
-        if humanoid.MaxHealth >= 1e10 then return true end
-    end
+    if humanoid.Health >= humanoid.MaxHealth and humanoid.MaxHealth >= 1e10 then return true end
     return false
+end
+
+-- Returns the resolved part name for the current lock state
+local function GetResolvedPartName()
+    return (Environment.Settings.ClosestBodyPartAimbot and Environment.ActiveLockPart)
+        or Environment.Settings.LockPart
 end
 
 local function GetClosestPlayer()
@@ -141,11 +153,12 @@ local function GetClosestPlayer()
                     if Environment.Settings.AliveCheck and character:FindFirstChildOfClass("Humanoid").Health <= 0 then continue end
                     if Environment.Settings.Invisible_Check and character.Head and character.Head.Transparency == 1 then continue end
                     if Environment.Settings.ForceField_Check and HasForceField(v) then continue end
-                    if Environment.Settings.GodCheck and IsGodded(character) then continue end  -- add this
+                    if Environment.Settings.GodCheck and IsGodded(character) then continue end
 
                     local lockPartPosition = character[Environment.Settings.LockPart].Position
                     local Vector, OnScreen = Camera:WorldToViewportPoint(lockPartPosition)
-                    local Distance = (Vector2(UserInputService:GetMouseLocation().X, UserInputService:GetMouseLocation().Y) - Vector2(Vector.X, Vector.Y)).Magnitude
+                    local mousePos = UserInputService:GetMouseLocation()
+                    local Distance = (Vector2(mousePos.X, mousePos.Y) - Vector2(Vector.X, Vector.Y)).Magnitude
 
                     if Distance < closestDistance and OnScreen and (not Environment.Settings.WallCheck or not IsObstructed(v)) then
                         if not Environment.FOVSettings.Enabled or IsInFOV(Vector2(Vector.X, Vector.Y)) then
@@ -162,64 +175,79 @@ local function GetClosestPlayer()
             local closestPartDistance = math.huge
 
             if Environment.Settings.ClosestBodyPartAimbot then
-    local mousePos = Vector2(UserInputService:GetMouseLocation().X, UserInputService:GetMouseLocation().Y)
-    
-    for _, part in ipairs(closestPlayer.Character:GetDescendants()) do
-        if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
-            local screenPos, onScreen = Camera:WorldToViewportPoint(part.Position)
-            if onScreen then
-                local distance = (mousePos - Vector2(screenPos.X, screenPos.Y)).Magnitude
-                if distance < closestPartDistance then
-                    closestPart = part
-                    closestPartDistance = distance
+                local mousePos = Vector2(UserInputService:GetMouseLocation().X, UserInputService:GetMouseLocation().Y)
+
+                for _, part in ipairs(closestPlayer.Character:GetDescendants()) do
+                    if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
+                        local screenPos, onScreen = Camera:WorldToViewportPoint(part.Position)
+                        if onScreen then
+                            local distance = (mousePos - Vector2(screenPos.X, screenPos.Y)).Magnitude
+                            if distance < closestPartDistance then
+                                closestPart = part
+                                closestPartDistance = distance
+                            end
+                        end
+                    end
                 end
+
+                -- Fallback if nothing found
+                if not closestPart then
+                    closestPart = closestPlayer.Character:FindFirstChild("HumanoidRootPart")
+                        or closestPlayer.Character:FindFirstChild("Torso")
+                    closestPartDistance = closestDistance
+                end
+            else
+                closestPart = closestPlayer.Character:FindFirstChild(Environment.Settings.LockPart)
+                closestPartDistance = closestDistance
             end
-        end
-    end
 
-    -- fallback if nothing found
-    if not closestPart then
-        closestPart = closestPlayer.Character:FindFirstChild("HumanoidRootPart")
-            or closestPlayer.Character:FindFirstChild("Torso")
-        closestPartDistance = closestDistance
-    end
-else
-    closestPart = closestPlayer.Character:FindFirstChild(Environment.Settings.LockPart)
-    closestPartDistance = closestDistance
-end
-
-                        if closestPart then
+            if closestPart then
                 RequiredDistance = closestPartDistance
-                Environment.Settings.LockPart = closestPart.Name
-                        
+
+                -- Store the target part name separately; do NOT overwrite LockPart setting
+                local targetPartName = closestPart.Name
+
                 if Environment.Settings.ReactionTime > 0 then
-                    -- check if we already have a pending lock for this player
                     if not PendingLocks[closestPlayer] then
                         PendingLocks[closestPlayer] = {
-                            time    = tick(),
-                            part    = closestPart.Name,
-                            player  = closestPlayer,
+                            time   = tick(),
+                            part   = targetPartName,
+                            player = closestPlayer,
                         }
                     end
-                
-                    -- check if reaction time has passed
+
                     local pending = PendingLocks[closestPlayer]
                     if pending and (tick() - pending.time) >= Environment.Settings.ReactionTime then
                         Environment.Locked = closestPlayer
-                        Environment.Settings.LockPart = pending.part
+                        Environment.ActiveLockPart = pending.part
                         PendingLocks[closestPlayer] = nil
                     end
                 else
                     Environment.Locked = closestPlayer
+                    Environment.ActiveLockPart = targetPartName
                     PendingLocks = {}
                 end
             end
         end
+
     else
-        local lockPartPosition = Environment.Locked.Character[Environment.Settings.LockPart].Position
+        -- Already locked — validate the lock is still valid
+        local resolvedPart = GetResolvedPartName()
+        local lockedChar = Environment.Locked.Character
+        local lockPartObj = lockedChar and lockedChar:FindFirstChild(resolvedPart)
+
+        if not lockPartObj then
+            CancelLock()
+            return
+        end
+
+        local lockPartPosition = lockPartObj.Position
+        local mousePos = UserInputService:GetMouseLocation()
+        local screenPos = Camera:WorldToViewportPoint(lockPartPosition)
+
         if Environment.Settings.WallCheck and IsObstructed(Environment.Locked) then
             CancelLock()
-        elseif (Vector2(UserInputService:GetMouseLocation().X, UserInputService:GetMouseLocation().Y) - Vector2(Camera:WorldToViewportPoint(lockPartPosition).X, Camera:WorldToViewportPoint(lockPartPosition).Y)).Magnitude > RequiredDistance then
+        elseif (Vector2(mousePos.X, mousePos.Y) - Vector2(screenPos.X, screenPos.Y)).Magnitude > RequiredDistance then
             CancelLock()
         end
     end
@@ -239,59 +267,85 @@ local function Load()
     local mathclamp = math.clamp
 
     ServiceConnections.RenderSteppedConnection = RunService.RenderStepped:Connect(function()
-        if Environment.FOVSettings.Enabled and Environment.Settings.Enabled then
+        -- FOV circle
+        if Environment.FOVSettings.Enabled then
             local mouseLocation = UserInputService_GetMouseLocation(UserInputService)
             local fovCircle = Environment.FOVCircle
             fovCircle.Radius = Environment.FOVSettings.Amount
             fovCircle.Thickness = Environment.FOVSettings.Thickness
             fovCircle.Filled = Environment.FOVSettings.Filled
             fovCircle.NumSides = Environment.FOVSettings.Sides
-            fovCircle.Color = Environment.FOVSettings.Color
+            fovCircle.Color = Environment.Locked and Environment.FOVSettings.LockedColor or Environment.FOVSettings.Color
             fovCircle.Transparency = Environment.FOVSettings.Transparency
             fovCircle.Visible = Environment.FOVSettings.Visible
             fovCircle.Position = Vector2(mouseLocation.X, mouseLocation.Y)
         else
             Environment.FOVCircle.Visible = false
-        end -- closes FOVSettings if
+        end
 
-if Environment.Settings.Enabled or Environment.Settings.AimbotAutoSelect then            if IsHoldingTool() then
+        -- Aimbot only runs when Running is true (trigger key held/toggled)
+        if Running and (Environment.Settings.Enabled or Environment.Settings.AimbotAutoSelect) then
+            if IsHoldingTool() then
                 if Environment.Settings.IsMainDead then
-                    local humanoid = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+                    local humanoid = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
                     if humanoid and humanoid.Health <= 0 then
                         CancelLock()
                         return
                     end
-                end -- closes IsMainDead if
+                end
 
                 GetClosestPlayer()
 
                 if Environment.Locked then
-                    local lockPartPosition = Environment.Locked.Character[Environment.Settings.LockPart].Position
+                    -- Resolve which part to aim at this frame
+                    local resolvedPart = GetResolvedPartName()
+                    local lockedChar = Environment.Locked.Character
+                    local lockPartObj = lockedChar and lockedChar:FindFirstChild(resolvedPart)
+
+                    if not lockPartObj then
+                        CancelLock()
+                        return
+                    end
+
+                    local lockPartPosition = lockPartObj.Position
 
                     if Environment.Settings.JumpOffset then
                         lockPartPosition = lockPartPosition + Vector3.new(0, Environment.Settings.JumpOffsetAmount, 0)
-                    end -- closes JumpOffset if
+                    end
 
                     if Environment.Settings.ThirdPerson then
                         Environment.Settings.ThirdPersonSensitivity = mathclamp(Environment.Settings.ThirdPersonSensitivity, 0.1, 5)
                         local vec = Camera_WorldToViewportPoint(Camera, lockPartPosition)
                         local mouseLocation = UserInputService_GetMouseLocation(UserInputService)
+
                         local dx = vec.X - mouseLocation.X
                         local dy = vec.Y - mouseLocation.Y
-                        local smoothFactor = mathclamp(Environment.Settings.ThirdPersonSensitivity / 10, 0.01, 1)
-                        local smoothX = dx * smoothFactor
-                        local smoothY = dy * smoothFactor
+
+                        local baseFactor = mathclamp(Environment.Settings.ThirdPersonSensitivity / 10, 0.01, 1)
+
+                        obj_lastDY = obj_lastDY or dy
+                        local dyDelta = math.abs(dy - obj_lastDY)
+                        obj_lastDY = dy
+
+                        local verticalMotion = mathclamp(dyDelta / 10, 0, 1)
+                        local smoothX = baseFactor
+                        local smoothY = baseFactor + (verticalMotion * (1 - baseFactor))
+
+                        local moveX = dx * smoothX
+                        local moveY = dy * smoothY
+
                         if math.abs(dx) > 0.5 or math.abs(dy) > 0.5 then
-                            doMouseMove(smoothX, smoothY)
-                        end -- closes abs if
+                            doMouseMove(moveX, moveY)
+                        end
+
                     else
                         if Environment.Settings.Sensitivity > 0 then
                             Animation = TweenService:Create(Camera, TweenInfo.new(Environment.Settings.Sensitivity, Enum.EasingStyle.Sine, Enum.EasingDirection.Out), {CFrame = CFrame.new(Camera.CFrame.Position, lockPartPosition)})
                             Animation:Play()
                         else
                             Camera.CFrame = CFrame.new(Camera.CFrame.Position, lockPartPosition)
-                        end -- closes Sensitivity if
-                    end -- closes ThirdPerson if
+                        end
+                    end
 
                     Environment.FOVCircle.Color = Environment.FOVSettings.LockedColor
 
@@ -299,30 +353,30 @@ if Environment.Settings.Enabled or Environment.Settings.AimbotAutoSelect then   
                         if not Shooting then
                             mouse1press()
                             Shooting = true
-                        end -- closes not Shooting if
-                    end -- closes AutoFire if
+                        end
+                    end
                 else
                     if Shooting then
                         mouse1release()
                         Shooting = false
-                    end -- closes Shooting if
-                end -- closes Environment.Locked if
-            end -- closes IsHoldingTool if
-        end -- closes Running if
-    end) -- closes RenderStepped
+                    end
+                end
+            end
+        end
+    end)
 
     ServiceConnections.InputBeganConnection = UserInputService.InputBegan:Connect(function(Input)
         if not Typing then
             local triggerKey = Environment.Settings.TriggerKey
             local isMatch = false
 
-if typeof(triggerKey) == "EnumItem" then
-    if triggerKey.EnumType == Enum.KeyCode then
-        isMatch = Input.KeyCode == triggerKey
-    else
-        isMatch = Input.UserInputType == triggerKey
-    end
-end
+            if typeof(triggerKey) == "EnumItem" then
+                if triggerKey.EnumType == Enum.KeyCode then
+                    isMatch = Input.KeyCode == triggerKey
+                else
+                    isMatch = Input.UserInputType == triggerKey
+                end
+            end
 
             if isMatch then
                 if Environment.Settings.Toggle then
@@ -331,26 +385,26 @@ end
                 else
                     Running = true
                 end
-            end -- closes isMatch if
+            end
 
             if Input.KeyCode == Environment.Settings.JumpOffsetKey then
                 Environment.Settings.JumpOffset = true
             end
         end
-    end) -- closes InputBegan
+    end)
 
     ServiceConnections.InputEndedConnection = UserInputService.InputEnded:Connect(function(Input)
         if not Typing then
             local triggerKey = Environment.Settings.TriggerKey
             local isMatch = false
 
-if typeof(triggerKey) == "EnumItem" then
-    if triggerKey.EnumType == Enum.KeyCode then
-        isMatch = Input.KeyCode == triggerKey
-    else
-        isMatch = Input.UserInputType == triggerKey
-    end
-end
+            if typeof(triggerKey) == "EnumItem" then
+                if triggerKey.EnumType == Enum.KeyCode then
+                    isMatch = Input.KeyCode == triggerKey
+                else
+                    isMatch = Input.UserInputType == triggerKey
+                end
+            end
 
             if isMatch and not Environment.Settings.Toggle then
                 Running = false
@@ -361,9 +415,8 @@ end
                 Environment.Settings.JumpOffset = false
             end
         end
-    end) -- closes InputEnded
-end -- closes Load()
-
+    end)
+end
 
 Environment.Functions = {}
 
